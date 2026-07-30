@@ -49,6 +49,8 @@ admin.use('/photos', adminAuth);
 admin.use('/photos/*', adminAuth);
 admin.use('/users', adminAuth);
 admin.use('/users/*', adminAuth);
+admin.use('/diaries', adminAuth);
+admin.use('/diaries/*', adminAuth);
 
 // ---- 相册 CRUD ----
 admin.get('/albums', async (c) => {
@@ -114,6 +116,69 @@ admin.delete('/photos/:id', async (c) => {
   if (photo) await c.env.UPLOADS.delete(photo.filename);
   await c.env.DB.prepare('DELETE FROM photos WHERE id = ?').bind(c.req.param('id')).run();
   return c.json({ ok: true });
+});
+
+// ---- 日记 CRUD ----
+admin.get('/diaries', async (c) => {
+  const { results } = await c.env.DB.prepare(
+    'SELECT id, title, slug, status, cover_filename, published_at, created_at, updated_at FROM diaries ORDER BY id DESC'
+  ).all();
+  return c.json(results);
+});
+
+admin.post('/diaries', async (c) => {
+  const adminUser = c.get('admin') as { id: number };
+  const { title, content_md = '', slug = null, status = 'draft' } = await c.req.json();
+  if (!title) return c.json({ detail: '标题必填' }, 400);
+  if (slug) {
+    const dup = await c.env.DB.prepare('SELECT id FROM diaries WHERE slug = ?').bind(slug).first();
+    if (dup) return c.json({ detail: 'slug 已被占用' }, 400);
+  }
+  const publishedAt = status === 'published' ? new Date().toISOString() : null;
+  const r = await c.env.DB.prepare(
+    'INSERT INTO diaries (author_id, title, slug, content_md, status, published_at) VALUES (?, ?, ?, ?, ?, ?)'
+  ).bind(adminUser.id, title, slug, content_md, status, publishedAt).run();
+  return c.json({ id: r.meta.last_row_id });
+});
+
+admin.put('/diaries/:id', async (c) => {
+  const { title, content_md, slug, status } = await c.req.json();
+  const old = await c.env.DB.prepare('SELECT * FROM diaries WHERE id = ?').bind(c.req.param('id'))
+    .first<{ status: string; published_at: string | null }>();
+  if (!old) return c.json({ detail: '日记不存在' }, 404);
+  if (slug) {
+    const dup = await c.env.DB.prepare('SELECT id FROM diaries WHERE slug = ? AND id != ?')
+      .bind(slug, c.req.param('id')).first();
+    if (dup) return c.json({ detail: 'slug 已被占用' }, 400);
+  }
+  // 首次发布时记录 published_at
+  const publishedAt = status === 'published' && old.status !== 'published'
+    ? new Date().toISOString() : old.published_at;
+  await c.env.DB.prepare(
+    `UPDATE diaries SET title = COALESCE(?, title), content_md = COALESCE(?, content_md),
+     slug = COALESCE(?, slug), status = COALESCE(?, status), published_at = ?,
+     updated_at = datetime('now') WHERE id = ?`
+  ).bind(title ?? null, content_md ?? null, slug ?? null, status ?? null, publishedAt, c.req.param('id')).run();
+  return c.json({ ok: true });
+});
+
+admin.delete('/diaries/:id', async (c) => {
+  const d = await c.env.DB.prepare('SELECT cover_filename FROM diaries WHERE id = ?')
+    .bind(c.req.param('id')).first<{ cover_filename: string | null }>();
+  if (d?.cover_filename) await c.env.UPLOADS.delete(d.cover_filename);
+  await c.env.DB.prepare('DELETE FROM diaries WHERE id = ?').bind(c.req.param('id')).run();
+  return c.json({ ok: true });
+});
+
+admin.post('/diaries/:id/cover', async (c) => {
+  const body = await c.req.parseBody();
+  const file = body.file;
+  if (!(file instanceof File)) return c.json({ detail: '缺少文件' }, 400);
+  const { key, error } = await saveUpload(c.env, file, 'image', 'covers');
+  if (error) return c.json({ detail: error }, 400);
+  await c.env.DB.prepare('UPDATE diaries SET cover_filename = ? WHERE id = ?')
+    .bind(key!, c.req.param('id')).run();
+  return c.json({ cover_filename: key });
 });
 
 export default admin;

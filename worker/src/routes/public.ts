@@ -51,5 +51,31 @@ content.get('/albums/:id', async (c) => {
   return c.json({ ...album, photos });
 });
 
+content.get('/diaries', async (c) => {
+  const page = Math.max(1, Number(c.req.query('page') ?? 1));
+  const size = 10;
+  const total = await c.env.DB.prepare("SELECT COUNT(*) AS n FROM diaries WHERE status = 'published'")
+    .first<{ n: number }>();
+  const { results } = await c.env.DB.prepare(
+    `SELECT d.id, d.title, d.slug, d.cover_filename, d.published_at, u.display_name AS author,
+            substr(d.content_md, 1, 200) AS excerpt
+     FROM diaries d JOIN admin_users u ON u.id = d.author_id
+     WHERE d.status = 'published' ORDER BY d.published_at DESC LIMIT ? OFFSET ?`
+  ).bind(size, (page - 1) * size).all();
+  return c.json({ items: results, total: total?.n ?? 0 });
+});
+
+content.get('/diaries/:slugOrId', async (c) => {
+  const key = c.req.param('slugOrId');
+  const isId = /^\d+$/.test(key);
+  const d = await c.env.DB.prepare(
+    `SELECT d.id, d.title, d.slug, d.content_md, d.cover_filename, d.published_at, u.display_name AS author
+     FROM diaries d JOIN admin_users u ON u.id = d.author_id
+     WHERE d.status = 'published' AND ${isId ? 'd.id = ?' : 'd.slug = ?'}`
+  ).bind(key).first();
+  if (!d) return c.json({ detail: '文章不存在' }, 404);
+  return c.json(d);
+});
+
 pub.route('/', content);
 export default pub;
