@@ -53,6 +53,8 @@ admin.use('/diaries', adminAuth);
 admin.use('/diaries/*', adminAuth);
 admin.use('/music', adminAuth);
 admin.use('/music/*', adminAuth);
+admin.use('/messages', adminAuth);
+admin.use('/messages/*', adminAuth);
 
 // ---- 相册 CRUD ----
 admin.get('/albums', async (c) => {
@@ -234,6 +236,25 @@ admin.delete('/music/songs/:id', async (c) => {
     .bind(c.req.param('id')).first<{ filename: string }>();
   if (s) await c.env.UPLOADS.delete(s.filename);
   await c.env.DB.prepare('DELETE FROM songs WHERE id = ?').bind(c.req.param('id')).run();
+  return c.json({ ok: true });
+});
+
+// ---- 留言审核 ----
+admin.get('/messages', async (c) => {
+  const pendingOnly = c.req.query('pending') === '1';
+  const { results } = await c.env.DB.prepare(
+    `SELECT * FROM messages ${pendingOnly ? 'WHERE is_approved = 0' : ''} ORDER BY id DESC LIMIT 200`
+  ).all();
+  return c.json(results);
+});
+
+admin.post('/messages/:id/approve', async (c) => {
+  await c.env.DB.prepare('UPDATE messages SET is_approved = 1 WHERE id = ?').bind(c.req.param('id')).run();
+  return c.json({ ok: true });
+});
+
+admin.delete('/messages/:id', async (c) => {
+  await c.env.DB.prepare('DELETE FROM messages WHERE id = ?').bind(c.req.param('id')).run();
   return c.json({ ok: true });
 });
 

@@ -85,6 +85,32 @@ content.get('/music/albums', async (c) => {
   return c.json(results);
 });
 
+content.get('/messages', async (c) => {
+  const type = c.req.query('target_type') ?? 'site';
+  const targetId = c.req.query('target_id');
+  const sql = targetId
+    ? 'SELECT id, nickname, content, created_at FROM messages WHERE is_approved = 1 AND target_type = ? AND target_id = ? ORDER BY id DESC LIMIT 100'
+    : 'SELECT id, nickname, content, created_at FROM messages WHERE is_approved = 1 AND target_type = ? ORDER BY id DESC LIMIT 100';
+  const stmt = targetId
+    ? c.env.DB.prepare(sql).bind(type, Number(targetId))
+    : c.env.DB.prepare(sql).bind(type);
+  return c.json((await stmt.all()).results);
+});
+
+content.post('/messages', async (c) => {
+  if (!rateLimit({ limit: 10, windowSec: 3600, key: `msg:${clientIp(c.req.raw)}` })) {
+    return c.json({ detail: '留言过于频繁，请稍后再试' }, 429);
+  }
+  const { nickname, content: text, target_type = 'site', target_id = null } = await c.req.json();
+  if (!nickname?.trim() || !text?.trim()) return c.json({ detail: '昵称和内容必填' }, 400);
+  if (nickname.length > 20) return c.json({ detail: '昵称过长' }, 400);
+  if (text.length > 500) return c.json({ detail: '内容过长（500 字以内）' }, 400);
+  if (!['diary', 'photo', 'site'].includes(target_type)) return c.json({ detail: '非法目标类型' }, 400);
+  await c.env.DB.prepare('INSERT INTO messages (nickname, content, target_type, target_id) VALUES (?, ?, ?, ?)')
+    .bind(nickname.trim(), text.trim(), target_type, target_id).run();
+  return c.json({ detail: '留言已提交，待审核' }, 202);
+});
+
 content.get('/music/albums/:id', async (c) => {
   const album = await c.env.DB.prepare('SELECT * FROM music_albums WHERE id = ?')
     .bind(c.req.param('id')).first();
