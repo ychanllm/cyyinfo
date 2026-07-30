@@ -1,0 +1,45 @@
+/* 暖色纪念册风格设计变量 */
+:root {
+  --bg: #faf6f0;
+  --bg-deep: #f3ece2;
+  --color-primary: #b0703c;
+  --color-primary-dark: #96582b;
+  --color-accent: #d9a05b;
+  --color-text: #4a3f35;
+  --color-text-light: #8a7a6a;
+  --color-card: #fffdf9;
+  --color-border: #e8ddd0;
+  --radius: 12px;
+  --shadow: 0 4px 16px rgba(120, 90, 60, 0.1);
+  --shadow-lg: 0 8px 32px rgba(120, 90, 60, 0.16);
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body,
+#app {
+  min-height: 100%;
+}
+
+body {
+  font-family: 'PingFang SC', 'Microsoft YaHei', 'Helvetica Neue', Arial, sans-serif;
+  background: var(--bg);
+  color: var(--color-text);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: var(--color-primary);
+  text-decoration: none;
+}
+
+input,
+button {
+  font: inherit;
+}

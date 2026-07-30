@@ -1,0 +1,107 @@
+<script setup>
+import { ref } from 'vue';
+import { useRouter } from 'vue-router';
+import { api, setAdminToken } from '../../api';
+
+const router = useRouter();
+const username = ref('');
+const password = ref('');
+const error = ref('');
+const loading = ref(false);
+
+async function submit() {
+  error.value = '';
+  if (!username.value.trim() || !password.value) {
+    error.value = '请输入账号和密码';
+    return;
+  }
+  loading.value = true;
+  try {
+    const { token } = await api('/admin/login', {
+      method: 'POST',
+      body: { username: username.value.trim(), password: password.value },
+    });
+    setAdminToken(token);
+    router.replace('/admin');
+  } catch (e) {
+    error.value = e.message;
+  } finally {
+    loading.value = false;
+  }
+}
+</script>
+
+<template>
+  <div class="login">
+    <form class="card" @submit.prevent="submit">
+      <h1>管理后台</h1>
+      <p class="hint">请使用管理员账号登录</p>
+      <input v-model="username" type="text" placeholder="账号" autocomplete="username" />
+      <input v-model="password" type="password" placeholder="密码" autocomplete="current-password" />
+      <p v-if="error" class="error">{{ error }}</p>
+      <button type="submit" :disabled="loading">{{ loading ? '登录中…' : '登录' }}</button>
+    </form>
+  </div>
+</template>
+
+<style scoped>
+.login {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-deep);
+  padding: 24px;
+}
+.card {
+  width: 100%;
+  max-width: 360px;
+  background: var(--color-card);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+  padding: 40px 32px;
+  text-align: center;
+}
+h1 {
+  font-size: 24px;
+  color: var(--color-primary);
+  margin-bottom: 8px;
+}
+.hint {
+  font-size: 14px;
+  color: var(--color-text-light);
+  margin-bottom: 24px;
+}
+input {
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  margin-bottom: 12px;
+  outline: none;
+}
+input:focus {
+  border-color: var(--color-primary);
+}
+.error {
+  color: #c0392b;
+  font-size: 13px;
+  margin-bottom: 12px;
+}
+button {
+  width: 100%;
+  padding: 12px;
+  border: none;
+  border-radius: 8px;
+  background: var(--color-primary);
+  color: #fff;
+  cursor: pointer;
+}
+button:hover:not(:disabled) {
+  background: var(--color-primary-dark);
+}
+button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+</style>
