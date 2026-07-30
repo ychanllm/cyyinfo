@@ -4,6 +4,8 @@ import { api, getGuestToken, getAdminToken } from './api';
 const routes = [
   { path: '/gate', name: 'gate', component: () => import('./views/GateView.vue'), meta: { public: true } },
   { path: '/', name: 'home', component: () => import('./views/HomeView.vue') },
+  { path: '/albums', name: 'albums', component: () => import('./views/AlbumsView.vue') },
+  { path: '/albums/:id', name: 'album-detail', component: () => import('./views/AlbumDetailView.vue') },
   { path: '/admin/login', name: 'admin-login', component: () => import('./views/admin/LoginView.vue'), meta: { public: true } },
 ];
 
