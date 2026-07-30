@@ -51,6 +51,8 @@ admin.use('/users', adminAuth);
 admin.use('/users/*', adminAuth);
 admin.use('/diaries', adminAuth);
 admin.use('/diaries/*', adminAuth);
+admin.use('/music', adminAuth);
+admin.use('/music/*', adminAuth);
 
 // ---- 相册 CRUD ----
 admin.get('/albums', async (c) => {
@@ -179,6 +181,60 @@ admin.post('/diaries/:id/cover', async (c) => {
   await c.env.DB.prepare('UPDATE diaries SET cover_filename = ? WHERE id = ?')
     .bind(key!, c.req.param('id')).run();
   return c.json({ cover_filename: key });
+});
+
+// ---- 音乐专辑 ----
+admin.get('/music/albums', async (c) => {
+  const { results } = await c.env.DB.prepare('SELECT * FROM music_albums ORDER BY sort_order, id').all();
+  return c.json(results);
+});
+
+admin.put('/music/albums/:id', async (c) => {
+  const { title, year, sort_order } = await c.req.json();
+  await c.env.DB.prepare('UPDATE music_albums SET title = COALESCE(?, title), year = COALESCE(?, year), sort_order = COALESCE(?, sort_order) WHERE id = ?')
+    .bind(title ?? null, year ?? null, sort_order ?? null, c.req.param('id')).run();
+  return c.json({ ok: true });
+});
+
+admin.post('/music/albums/:id/cover', async (c) => {
+  const body = await c.req.parseBody();
+  const file = body.file;
+  if (!(file instanceof File)) return c.json({ detail: '缺少文件' }, 400);
+  const { key, error } = await saveUpload(c.env, file, 'image', 'covers');
+  if (error) return c.json({ detail: error }, 400);
+  await c.env.DB.prepare('UPDATE music_albums SET cover_filename = ? WHERE id = ?')
+    .bind(key!, c.req.param('id')).run();
+  return c.json({ cover_filename: key });
+});
+
+// ---- 歌曲 ----
+admin.post('/music/songs', async (c) => {
+  const body = await c.req.parseBody();
+  const file = body.file;
+  const albumId = Number(body.album_id);
+  const title = String(body.title ?? '');
+  const trackNo = Number(body.track_no ?? 0);
+  if (!(file instanceof File) || !albumId || !title) return c.json({ detail: '缺少文件/专辑/歌名' }, 400);
+  const { key, error } = await saveUpload(c.env, file, 'audio', 'music');
+  if (error) return c.json({ detail: error }, 400);
+  const r = await c.env.DB.prepare('INSERT INTO songs (album_id, title, track_no, filename) VALUES (?, ?, ?, ?)')
+    .bind(albumId, title, trackNo, key!).run();
+  return c.json({ id: r.meta.last_row_id, filename: key });
+});
+
+admin.put('/music/songs/:id', async (c) => {
+  const { title, track_no } = await c.req.json();
+  await c.env.DB.prepare('UPDATE songs SET title = COALESCE(?, title), track_no = COALESCE(?, track_no) WHERE id = ?')
+    .bind(title ?? null, track_no ?? null, c.req.param('id')).run();
+  return c.json({ ok: true });
+});
+
+admin.delete('/music/songs/:id', async (c) => {
+  const s = await c.env.DB.prepare('SELECT filename FROM songs WHERE id = ?')
+    .bind(c.req.param('id')).first<{ filename: string }>();
+  if (s) await c.env.UPLOADS.delete(s.filename);
+  await c.env.DB.prepare('DELETE FROM songs WHERE id = ?').bind(c.req.param('id')).run();
+  return c.json({ ok: true });
 });
 
 export default admin;

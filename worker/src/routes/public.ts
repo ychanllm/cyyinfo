@@ -77,5 +77,23 @@ content.get('/diaries/:slugOrId', async (c) => {
   return c.json(d);
 });
 
+content.get('/music/albums', async (c) => {
+  const { results } = await c.env.DB.prepare(
+    `SELECT m.*, COUNT(s.id) AS song_count FROM music_albums m
+     LEFT JOIN songs s ON s.album_id = m.id GROUP BY m.id ORDER BY m.sort_order, m.id`
+  ).all();
+  return c.json(results);
+});
+
+content.get('/music/albums/:id', async (c) => {
+  const album = await c.env.DB.prepare('SELECT * FROM music_albums WHERE id = ?')
+    .bind(c.req.param('id')).first();
+  if (!album) return c.json({ detail: '专辑不存在' }, 404);
+  const { results: songs } = await c.env.DB.prepare(
+    'SELECT id, title, track_no, filename, duration FROM songs WHERE album_id = ? ORDER BY track_no, id'
+  ).bind(c.req.param('id')).all();
+  return c.json({ ...album, songs });
+});
+
 pub.route('/', content);
 export default pub;
