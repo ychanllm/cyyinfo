@@ -19,6 +19,8 @@ def main(music_dir: Path, dry_run: bool) -> None:
     # Windows 控制台默认 GBK，强制 UTF-8 以便正确打印中文专辑名
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    # wrangler 子进程以 cwd=worker/ 运行，--file 必须为绝对路径
+    music_dir = music_dir.resolve()
     out_dir = Path(__file__).parent / "out"
     out_dir.mkdir(exist_ok=True)
     sql_lines = []
@@ -46,7 +48,7 @@ def main(music_dir: Path, dry_run: bool) -> None:
             print(f"OK {album}/{title} -> {key}")
     sql_path = out_dir / "songs_seed.sql"
     sql_path.write_text("\n".join(sql_lines), encoding="utf-8")
-    print(f"\n已生成 {sql_path}\n执行: npx wrangler d1 execute cyyinfo-db --remote --file={sql_path}")
+    print(f"\n已生成 {sql_path}\n执行: cd worker && npx wrangler d1 execute cyyinfo-db --remote --file=../scripts/out/songs_seed.sql")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="批量导入音乐到 R2 并生成 songs 表 SQL")
