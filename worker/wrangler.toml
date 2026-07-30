@@ -1,0 +1,16 @@
+name = "cyyinfo-api"
+main = "src/index.ts"
+compatibility_date = "2024-09-25"
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+JWT_EXPIRE_HOURS = "72"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "cyyinfo-db"
+database_id = "REPLACE_AFTER_D1_CREATE"
+
+[[r2_buckets]]
+binding = "UPLOADS"
+bucket_name = "cyyinfo-uploads"
