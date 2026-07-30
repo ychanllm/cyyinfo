@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import type { Env } from '../types';
 import { signJwt, adminAuth } from '../auth';
 import { rateLimit, clientIp } from '../security';
+import { saveUpload } from '../upload';
 
 interface AdminUserRow {
   id: number;
@@ -42,7 +43,77 @@ admin.post('/login', async (c) => {
 });
 
 // 受保护子路由在此挂载（后续任务）：admin.use('/users/*', adminAuth) 等
+admin.use('/albums', adminAuth);
+admin.use('/albums/*', adminAuth);
+admin.use('/photos', adminAuth);
+admin.use('/photos/*', adminAuth);
 admin.use('/users', adminAuth);
 admin.use('/users/*', adminAuth);
+
+// ---- 相册 CRUD ----
+admin.get('/albums', async (c) => {
+  const { results } = await c.env.DB.prepare('SELECT * FROM albums ORDER BY sort_order, id').all();
+  return c.json(results);
+});
+
+admin.post('/albums', async (c) => {
+  const { title, description = '', sort_order = 0 } = await c.req.json();
+  if (!title) return c.json({ detail: '标题必填' }, 400);
+  const r = await c.env.DB.prepare('INSERT INTO albums (title, description, sort_order) VALUES (?, ?, ?)')
+    .bind(title, description, sort_order).run();
+  return c.json({ id: r.meta.last_row_id, title, description, sort_order });
+});
+
+admin.put('/albums/:id', async (c) => {
+  const { title, description, sort_order } = await c.req.json();
+  await c.env.DB.prepare('UPDATE albums SET title = COALESCE(?, title), description = COALESCE(?, description), sort_order = COALESCE(?, sort_order) WHERE id = ?')
+    .bind(title ?? null, description ?? null, sort_order ?? null, c.req.param('id')).run();
+  return c.json({ ok: true });
+});
+
+admin.delete('/albums/:id', async (c) => {
+  // 先删 R2 里的照片文件
+  const { results } = await c.env.DB.prepare('SELECT filename FROM photos WHERE album_id = ?')
+    .bind(c.req.param('id')).all<{ filename: string }>();
+  for (const p of results) await c.env.UPLOADS.delete(p.filename);
+  await c.env.DB.prepare('DELETE FROM albums WHERE id = ?').bind(c.req.param('id')).run();
+  return c.json({ ok: true });
+});
+
+admin.post('/albums/:id/cover', async (c) => {
+  const { photo_id } = await c.req.json();
+  await c.env.DB.prepare('UPDATE albums SET cover_photo_id = ? WHERE id = ?')
+    .bind(photo_id, c.req.param('id')).run();
+  return c.json({ ok: true });
+});
+
+// ---- 照片 ----
+admin.post('/photos', async (c) => {
+  const body = await c.req.parseBody();
+  const file = body.file;
+  const albumId = Number(body.album_id);
+  const caption = String(body.caption ?? '');
+  if (!(file instanceof File) || !albumId) return c.json({ detail: '缺少文件或相册' }, 400);
+  const { key, error } = await saveUpload(c.env, file, 'image', 'photos');
+  if (error) return c.json({ detail: error }, 400);
+  const r = await c.env.DB.prepare('INSERT INTO photos (album_id, filename, caption) VALUES (?, ?, ?)')
+    .bind(albumId, key!, caption).run();
+  return c.json({ id: r.meta.last_row_id, filename: key, album_id: albumId, caption });
+});
+
+admin.put('/photos/:id', async (c) => {
+  const { caption, sort_order, taken_at } = await c.req.json();
+  await c.env.DB.prepare('UPDATE photos SET caption = COALESCE(?, caption), sort_order = COALESCE(?, sort_order), taken_at = COALESCE(?, taken_at) WHERE id = ?')
+    .bind(caption ?? null, sort_order ?? null, taken_at ?? null, c.req.param('id')).run();
+  return c.json({ ok: true });
+});
+
+admin.delete('/photos/:id', async (c) => {
+  const photo = await c.env.DB.prepare('SELECT filename FROM photos WHERE id = ?')
+    .bind(c.req.param('id')).first<{ filename: string }>();
+  if (photo) await c.env.UPLOADS.delete(photo.filename);
+  await c.env.DB.prepare('DELETE FROM photos WHERE id = ?').bind(c.req.param('id')).run();
+  return c.json({ ok: true });
+});
 
 export default admin;

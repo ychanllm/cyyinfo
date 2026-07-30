@@ -40,5 +40,16 @@ content.get('/albums', async (c) => {
   return c.json(results);
 });
 
+content.get('/albums/:id', async (c) => {
+  const album = await c.env.DB.prepare(
+    'SELECT a.*, p.filename AS cover_filename FROM albums a LEFT JOIN photos p ON p.id = a.cover_photo_id WHERE a.id = ?'
+  ).bind(c.req.param('id')).first();
+  if (!album) return c.json({ detail: '相册不存在' }, 404);
+  const { results: photos } = await c.env.DB.prepare(
+    'SELECT id, filename, caption, taken_at, sort_order FROM photos WHERE album_id = ? ORDER BY sort_order, id'
+  ).bind(c.req.param('id')).all();
+  return c.json({ ...album, photos });
+});
+
 pub.route('/', content);
 export default pub;
