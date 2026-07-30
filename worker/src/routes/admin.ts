@@ -151,8 +151,8 @@ admin.put('/diaries/:id', async (c) => {
       .bind(slug, c.req.param('id')).first();
     if (dup) return c.json({ detail: 'slug 已被占用' }, 400);
   }
-  // 首次发布时记录 published_at
-  const publishedAt = status === 'published' && old.status !== 'published'
+  // 首次发布时记录 published_at，撤回后再发布不重置
+  const publishedAt = status === 'published' && old.published_at == null
     ? new Date().toISOString() : old.published_at;
   await c.env.DB.prepare(
     `UPDATE diaries SET title = COALESCE(?, title), content_md = COALESCE(?, content_md),

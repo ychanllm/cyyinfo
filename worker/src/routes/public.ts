@@ -52,7 +52,7 @@ content.get('/albums/:id', async (c) => {
 });
 
 content.get('/diaries', async (c) => {
-  const page = Math.max(1, Number(c.req.query('page') ?? 1));
+  const page = Math.max(1, Number(c.req.query('page')) || 1);
   const size = 10;
   const total = await c.env.DB.prepare("SELECT COUNT(*) AS n FROM diaries WHERE status = 'published'")
     .first<{ n: number }>();

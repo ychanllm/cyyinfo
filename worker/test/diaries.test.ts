@@ -34,5 +34,29 @@ describe('日记', () => {
 
     const byId = await SELF.fetch(`http://x/api/diaries/${diary.id}`);
     expect(byId.status).toBe(200);
+
+    // 撤回为 draft 再发布，published_at 应保持首次发布的值
+    const firstRead = await SELF.fetch('http://x/api/diaries/first');
+    const firstPublishedAt = (await firstRead.json() as any).published_at;
+    expect(firstPublishedAt).toBeTruthy();
+
+    await SELF.fetch(`http://x/api/admin/diaries/${diary.id}`, {
+      method: 'PUT', headers: auth(), body: JSON.stringify({ status: 'draft' }),
+    });
+    const repub = await SELF.fetch(`http://x/api/admin/diaries/${diary.id}`, {
+      method: 'PUT', headers: auth(), body: JSON.stringify({ status: 'published' }),
+    });
+    expect(repub.status).toBe(200);
+
+    const secondRead = await SELF.fetch('http://x/api/diaries/first');
+    expect((await secondRead.json() as any).published_at).toBe(firstPublishedAt);
+  });
+
+  it('非数字 page 回退到第 1 页', async () => {
+    const bad = await SELF.fetch('http://x/api/diaries?page=abc');
+    expect(bad.status).toBe(200);
+    const p1 = await SELF.fetch('http://x/api/diaries?page=1');
+    expect(p1.status).toBe(200);
+    expect(await bad.json()).toEqual(await p1.json());
   });
 });
