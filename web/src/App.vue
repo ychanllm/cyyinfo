@@ -3,6 +3,7 @@ import { computed } from 'vue';
 import { useRoute } from 'vue-router';
 import NavBar from './components/NavBar.vue';
 import DesktopPet from './components/DesktopPet.vue';
+import MiniPlayer from './components/MiniPlayer.vue';
 
 const route = useRoute();
 const isAdmin = computed(() => route.path.startsWith('/admin'));
@@ -16,7 +17,7 @@ const isAdmin = computed(() => route.path.startsWith('/admin'));
       <router-view />
     </main>
     <DesktopPet />
-    <!-- MiniPlayer (Task 15) -->
+    <MiniPlayer />
   </template>
 </template>
 
