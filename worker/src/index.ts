@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import type { Env } from './types';
 import adminRoutes from './routes/admin';
+import publicRoutes from './routes/public';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -28,5 +29,6 @@ app.use('*', async (c, next) => {
 app.get('/api/health', (c) => c.json({ ok: true }));
 
 app.route('/api/admin', adminRoutes);
+app.route('/api', publicRoutes);
 
 export default app;
