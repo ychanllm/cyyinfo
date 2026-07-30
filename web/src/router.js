@@ -6,6 +6,8 @@ const routes = [
   { path: '/', name: 'home', component: () => import('./views/HomeView.vue') },
   { path: '/albums', name: 'albums', component: () => import('./views/AlbumsView.vue') },
   { path: '/albums/:id', name: 'album-detail', component: () => import('./views/AlbumDetailView.vue') },
+  { path: '/diaries', name: 'diaries', component: () => import('./views/DiariesView.vue') },
+  { path: '/diaries/:slugOrId', name: 'diary-detail', component: () => import('./views/DiaryDetailView.vue') },
   { path: '/admin/login', name: 'admin-login', component: () => import('./views/admin/LoginView.vue'), meta: { public: true } },
 ];
 
