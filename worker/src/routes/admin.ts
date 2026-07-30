@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import bcrypt from 'bcryptjs';
 import type { Env } from '../types';
 import { signJwt, adminAuth } from '../auth';
+import { getSetting, setSetting } from '../guard';
 import { rateLimit, clientIp } from '../security';
 import { saveUpload } from '../upload';
 
@@ -55,6 +56,65 @@ admin.use('/music', adminAuth);
 admin.use('/music/*', adminAuth);
 admin.use('/messages', adminAuth);
 admin.use('/messages/*', adminAuth);
+admin.use('/settings', adminAuth);
+admin.use('/settings/*', adminAuth);
+
+// ---- 账号管理 ----
+admin.get('/users', async (c) => {
+  const { results } = await c.env.DB.prepare(
+    'SELECT id, username, display_name, created_at FROM admin_users ORDER BY id'
+  ).all();
+  return c.json(results);
+});
+
+admin.post('/users', async (c) => {
+  const { username, password, display_name = '' } = await c.req.json();
+  if (!username || !password) return c.json({ detail: '账号和密码必填' }, 400);
+  if (password.length < 8) return c.json({ detail: '密码至少 8 位' }, 400);
+  const dup = await c.env.DB.prepare('SELECT id FROM admin_users WHERE username = ?').bind(username).first();
+  if (dup) return c.json({ detail: '账号已存在' }, 400);
+  const r = await c.env.DB.prepare('INSERT INTO admin_users (username, password_hash, display_name) VALUES (?, ?, ?)')
+    .bind(username, bcrypt.hashSync(password, 10), display_name).run();
+  return c.json({ id: r.meta.last_row_id });
+});
+
+admin.put('/users/:id', async (c) => {
+  const { display_name, password } = await c.req.json();
+  if (password && password.length < 8) return c.json({ detail: '密码至少 8 位' }, 400);
+  await c.env.DB.prepare('UPDATE admin_users SET display_name = COALESCE(?, display_name), password_hash = COALESCE(?, password_hash) WHERE id = ?')
+    .bind(display_name ?? null, password ? bcrypt.hashSync(password, 10) : null, c.req.param('id')).run();
+  return c.json({ ok: true });
+});
+
+admin.delete('/users/:id', async (c) => {
+  const me = c.get('admin') as { id: number };
+  const targetId = Number(c.req.param('id'));
+  if (targetId === me.id) return c.json({ detail: '不能删除当前登录账号' }, 400);
+  const count = await c.env.DB.prepare('SELECT COUNT(*) AS n FROM admin_users').first<{ n: number }>();
+  if ((count?.n ?? 0) <= 1) return c.json({ detail: '至少保留一个账号' }, 400);
+  await c.env.DB.prepare('DELETE FROM admin_users WHERE id = ?').bind(targetId).run();
+  return c.json({ ok: true });
+});
+
+// ---- 站点设置 ----
+admin.get('/settings', async (c) => {
+  return c.json({
+    site_name: await getSetting(c.env.DB, 'site_name'),
+    anniversary_date: await getSetting(c.env.DB, 'anniversary_date'),
+    passcode_enabled: Boolean(await getSetting(c.env.DB, 'site_passcode_hash')),
+  });
+});
+
+admin.put('/settings', async (c) => {
+  const { site_name, anniversary_date, passcode } = await c.req.json();
+  if (site_name !== undefined) await setSetting(c.env.DB, 'site_name', String(site_name));
+  if (anniversary_date !== undefined) await setSetting(c.env.DB, 'anniversary_date', String(anniversary_date));
+  if (passcode !== undefined) {
+    await setSetting(c.env.DB, 'site_passcode_hash',
+      passcode === '' ? '' : bcrypt.hashSync(String(passcode), 10));
+  }
+  return c.json({ ok: true });
+});
 
 // ---- 相册 CRUD ----
 admin.get('/albums', async (c) => {
