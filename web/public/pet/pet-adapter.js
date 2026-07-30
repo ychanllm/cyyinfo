@@ -65,12 +65,13 @@ export async function createPet(canvas, bubbleEl, skinUrl) {
     playRow(defaultAction);
   }
 
-  // 点播一个动作：完整播一轮（loop 动作也只播一轮）后自动回待机
-  function play(name) {
+  // 点播一个动作：once=true（默认）播完一轮后自动回待机；
+  // once=false 且动作 loop=true 时持续循环，直到下次 play/空闲轮换打断
+  function play(name, once = true) {
     const spec = skin.actions[name];
     if (!spec) return;
     busy = true;
-    playRow(name, { once: true, onDone: idle });
+    playRow(name, { once, onDone: idle });
     if (spec.lines?.length) {
       say(spec.lines[Math.floor(Math.random() * spec.lines.length)]);
     }

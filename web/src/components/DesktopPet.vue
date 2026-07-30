@@ -8,6 +8,8 @@ const cv = ref(null);
 const pos = reactive({ x: 0, y: 0 });
 let pet = null;
 let dragState = null;
+let suppressClick = false;
+let unmounted = false;
 // 移动端（coarse）只点不拖
 const canDrag = window.matchMedia('(pointer: fine)').matches;
 
@@ -38,12 +40,16 @@ function onPointerMove(e) {
 
 function onPointerUp(e) {
   if (!dragState || e.pointerId !== dragState.id) return;
-  const wasClick = !dragState.moved;
+  // 拖拽结束后抑制紧随的 click，避免误触；点击统一走 @click（兼容移动端 tap）
+  if (dragState.moved) {
+    suppressClick = true;
+    setTimeout(() => { suppressClick = false; }, 0);
+  }
   dragState = null;
-  if (wasClick) onClick();
 }
 
 function onClick() {
+  if (suppressClick) return;
   if (!pet) return;
   const pool = pet.actionNames.filter((n) => n !== pet.defaultAction);
   if (!pool.length) return;
@@ -56,10 +62,14 @@ onMounted(async () => {
   // public 下的静态资源 URL，运行时原生 ESM 加载（变量形式避免被构建器解析）
   const adapterUrl = '/pet/pet-adapter.js';
   const { createPet } = await import(/* @vite-ignore */ adapterUrl);
-  pet = await createPet(cv.value, bubble.value, '/pet/skins/default/skin.json');
+  const created = await createPet(cv.value, bubble.value, '/pet/skins/default/skin.json');
+  // await 期间组件可能已卸载，立即销毁避免泄漏
+  if (unmounted) { created.destroy(); return; }
+  pet = created;
 });
 
 onUnmounted(() => {
+  unmounted = true;
   pet?.destroy();
   pet = null;
 });
@@ -74,6 +84,7 @@ onUnmounted(() => {
     @pointermove="onPointerMove"
     @pointerup="onPointerUp"
     @pointercancel="dragState = null"
+    @click="onClick"
   >
     <div ref="bubble" class="pet-bubble"></div>
     <canvas ref="cv" class="pet-canvas"></canvas>
