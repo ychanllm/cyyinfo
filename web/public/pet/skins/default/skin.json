@@ -1,0 +1,36 @@
+{
+  "name": "羽毛球女孩",
+  "cell": { "w": 192, "h": 208 },
+  "image": "spritesheet.webp",
+  "defaultAction": "idle",
+  "behaviors": {
+    "greet": "waving",
+    "remind": "waving",
+    "focusStart": "waving",
+    "focusDone": "jumping",
+    "focusFail": "failed",
+    "breakEnd": "waving",
+    "focusBase": "review",
+    "ambient": ["idle", "idle", "waiting", "review"]
+  },
+  "actions": {
+    "idle":          { "row": 0, "durs": [280, 110, 110, 140, 140, 320], "loop": true, "label": "待机" },
+    "running-right": { "row": 1, "durs": [120, 120, 120, 120, 120, 120, 120, 220], "loop": true, "label": "向右跑" },
+    "running-left":  { "row": 2, "durs": [120, 120, 120, 120, 120, 120, 120, 220], "loop": true, "label": "向左跑" },
+    "waving":        { "row": 3, "durs": [140, 140, 140, 280], "label": "挥手" },
+    "jumping":       { "row": 4, "durs": [140, 140, 140, 140, 280], "label": "跳跃" },
+    "failed":        { "row": 5, "durs": [140, 140, 140, 140, 140, 140, 140, 240], "label": "失败" },
+    "waiting":       { "row": 6, "durs": [150, 150, 150, 150, 150, 260], "loop": true, "label": "等待" },
+    "running":       { "row": 7, "durs": [120, 120, 120, 120, 120, 220], "label": "奔跑" },
+    "review":        { "row": 8, "durs": [150, 150, 150, 150, 150, 280], "loop": true, "label": "审阅" },
+    "angry":         { "row": 9, "durs": [120, 120, 120, 120, 120, 260], "label": "嗔怒", "lines": ["我造"] }
+  },
+  "events": {
+    "idle": ["今天也要加油鸭～", "要不要来一局羽毛球？", "我在认真看你工作哦", "代码写得真顺！", "扣杀！", "摸摸鱼也是可以的……", "站久了记得动一动"],
+    "sit": ["起来活动一下吧～", "久坐伤身，走两步？", "跟我做：伸——懒——腰——"],
+    "water": ["喝口水再继续？", "补水时间到！"],
+    "focusStart": ["专注模式，我盯着你哦", "加油，这一局要赢！"],
+    "focusDone": ["完成了！好球！", "太棒了，休息一下～"],
+    "focusFail": ["呜……下次一定可以", "没关系，再来一次"]
+  }
+}
