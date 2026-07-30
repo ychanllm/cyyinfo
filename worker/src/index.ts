@@ -9,7 +9,7 @@ const app = new Hono<{ Bindings: Env }>();
 
 const ALLOWED_ORIGINS = [
   'http://localhost:5173',
-  // 部署后补充 Pages 域名
+  'https://cyyinfo.pages.dev',
 ];
 
 app.use('*', cors({

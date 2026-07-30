@@ -9,7 +9,7 @@ JWT_EXPIRE_HOURS = "72"
 [[d1_databases]]
 binding = "DB"
 database_name = "cyyinfo-db"
-database_id = "REPLACE_AFTER_D1_CREATE"
+database_id = "c8f4912f-bf69-4aca-8ff4-c266649799bc"
 
 [[r2_buckets]]
 binding = "UPLOADS"
