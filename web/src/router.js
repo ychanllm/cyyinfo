@@ -11,6 +11,14 @@ const routes = [
   { path: '/music', name: 'music', component: () => import('./views/MusicView.vue') },
   { path: '/music/:id', name: 'music-album', component: () => import('./views/MusicAlbumView.vue') },
   { path: '/admin/login', name: 'admin-login', component: () => import('./views/admin/LoginView.vue'), meta: { public: true } },
+  {
+    path: '/admin',
+    component: () => import('./views/admin/AdminLayout.vue'),
+    children: [
+      { path: '', redirect: '/admin/photos' },
+      { path: 'photos', name: 'admin-photos', component: () => import('./views/admin/PhotosView.vue') },
+    ],
+  },
 ];
 
 export const router = createRouter({ history: createWebHistory(), routes });
