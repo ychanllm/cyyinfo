@@ -17,6 +17,9 @@ const routes = [
     children: [
       { path: '', redirect: '/admin/photos' },
       { path: 'photos', name: 'admin-photos', component: () => import('./views/admin/PhotosView.vue') },
+      { path: 'diaries', name: 'admin-diaries', component: () => import('./views/admin/DiariesView.vue') },
+      { path: 'diaries/new', name: 'admin-diary-new', component: () => import('./views/admin/DiaryEditView.vue') },
+      { path: 'diaries/:id/edit', name: 'admin-diary-edit', component: () => import('./views/admin/DiaryEditView.vue') },
     ],
   },
 ];

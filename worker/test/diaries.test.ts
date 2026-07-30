@@ -52,6 +52,30 @@ describe('日记', () => {
     expect((await secondRead.json() as any).published_at).toBe(firstPublishedAt);
   });
 
+  it('管理端按 id 获取日记详情（含 content_md 全文）', async () => {
+    const content = '## 详情测试\n\n这是一段完整的正文内容，含 **加粗**。';
+    const create = await SELF.fetch('http://x/api/admin/diaries', {
+      method: 'POST', headers: auth(),
+      body: JSON.stringify({ title: '详情测试', content_md: content }),
+    });
+    expect(create.status).toBe(200);
+    const diary = await create.json() as any;
+
+    const detail = await SELF.fetch(`http://x/api/admin/diaries/${diary.id}`, { headers: auth() });
+    expect(detail.status).toBe(200);
+    const d = await detail.json() as any;
+    expect(d.id).toBe(diary.id);
+    expect(d.title).toBe('详情测试');
+    expect(d.content_md).toBe(content);
+    expect(d.status).toBe('draft');
+
+    const missing = await SELF.fetch('http://x/api/admin/diaries/999999', { headers: auth() });
+    expect(missing.status).toBe(404);
+
+    // 清理，避免影响其它用例的公开列表断言
+    await SELF.fetch(`http://x/api/admin/diaries/${diary.id}`, { method: 'DELETE', headers: auth() });
+  });
+
   it('非数字 page 回退到第 1 页', async () => {
     const bad = await SELF.fetch('http://x/api/diaries?page=abc');
     expect(bad.status).toBe(200);

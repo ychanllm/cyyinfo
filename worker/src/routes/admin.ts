@@ -190,6 +190,12 @@ admin.get('/diaries', async (c) => {
   return c.json(results);
 });
 
+admin.get('/diaries/:id', async (c) => {
+  const d = await c.env.DB.prepare('SELECT * FROM diaries WHERE id = ?').bind(c.req.param('id')).first();
+  if (!d) return c.json({ detail: '日记不存在' }, 404);
+  return c.json(d);
+});
+
 admin.post('/diaries', async (c) => {
   const adminUser = c.get('admin') as { id: number };
   const { title, content_md = '', slug = null, status = 'draft' } = await c.req.json();
