@@ -59,9 +59,7 @@ function onClick() {
 onMounted(async () => {
   pos.x = window.innerWidth - wrap.value.offsetWidth - 24;
   pos.y = window.innerHeight - wrap.value.offsetHeight - 24;
-  // public 下的静态资源 URL，运行时原生 ESM 加载（变量形式避免被构建器解析）
-  const adapterUrl = '/pet/pet-adapter.js';
-  const { createPet } = await import(/* @vite-ignore */ adapterUrl);
+  const { createPet } = await import('../pet/pet-adapter.js');
   const created = await createPet(cv.value, bubble.value, '/pet/skins/default/skin.json');
   // await 期间组件可能已卸载，立即销毁避免泄漏
   if (unmounted) { created.destroy(); return; }
