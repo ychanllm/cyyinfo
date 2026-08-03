@@ -15,6 +15,9 @@ BUCKET = "cyyinfo-uploads"
 REPO_ROOT = Path(__file__).resolve().parent.parent
 WORKER_DIR = REPO_ROOT / "worker"
 
+# 扩展名 -> content-type（.m4a 默认会被 wrangler 误标为 video/mp4）
+AUDIO_CT = {"mp3": "audio/mpeg", "m4a": "audio/mp4", "aac": "audio/aac"}
+
 def main(music_dir: Path, dry_run: bool) -> None:
     # Windows 控制台默认 GBK，强制 UTF-8 以便正确打印中文专辑名
     if hasattr(sys.stdout, "reconfigure"):
@@ -34,7 +37,8 @@ def main(music_dir: Path, dry_run: bool) -> None:
             track_no, title, ext = int(m.group(1)), m.group(2), m.group(3).lower()
             key = f"music/{uuid.uuid4()}.{ext}"
             cmd = ["npx", "wrangler", "r2", "object", "put",
-                   f"{BUCKET}/{key}", "--file", str(f)]
+                   f"{BUCKET}/{key}", "--file", str(f),
+                   "--content-type", AUDIO_CT.get(ext, "audio/mpeg")]
             if dry_run:
                 print(f"[dry-run] (cwd={WORKER_DIR}) {' '.join(cmd)}")
             else:
