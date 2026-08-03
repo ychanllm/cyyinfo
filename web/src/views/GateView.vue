@@ -1,12 +1,19 @@
 <script setup>
-import { ref } from 'vue';
-import { useRouter } from 'vue-router';
+import { ref, computed } from 'vue';
+import { useRouter, useRoute } from 'vue-router';
 import { api, setGuestToken } from '../api';
 
 const router = useRouter();
+const route = useRoute();
 const passcode = ref('');
 const error = ref('');
 const loading = ref(false);
+
+// 验证后回到原本要访问的页面，默认回首页
+const redirectTarget = computed(() => {
+  const r = route.query.redirect;
+  return typeof r === 'string' && r.startsWith('/') ? r : '/';
+});
 
 async function submit() {
   error.value = '';
@@ -21,7 +28,7 @@ async function submit() {
       body: { passcode: passcode.value.trim() },
     });
     setGuestToken(token);
-    router.replace('/');
+    router.replace(redirectTarget.value);
   } catch (e) {
     error.value = e.message;
   } finally {

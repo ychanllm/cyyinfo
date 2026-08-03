@@ -36,15 +36,17 @@ router.beforeEach(async (to) => {
   if (to.meta.public) return true;
   // 后台守卫
   if (to.path.startsWith('/admin')) {
-    return getAdminToken() ? true : { name: 'admin-login' };
+    return getAdminToken() ? true : { name: 'admin-login', query: { redirect: to.fullPath } };
   }
-  // 访客口令守卫
+  // 访客口令守卫：已登录管理员可免口令浏览公开页
   if (passcodeEnabled === null) {
     try {
       const s = await api('/site/status');
       passcodeEnabled = s.passcode_enabled;
     } catch { passcodeEnabled = false; }
   }
-  if (passcodeEnabled && !getGuestToken()) return { name: 'gate' };
+  if (passcodeEnabled && !getGuestToken() && !getAdminToken()) {
+    return { name: 'gate', query: { redirect: to.fullPath } };
+  }
   return true;
 });

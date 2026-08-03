@@ -1,13 +1,20 @@
 <script setup>
-import { ref } from 'vue';
-import { useRouter } from 'vue-router';
+import { ref, computed } from 'vue';
+import { useRouter, useRoute } from 'vue-router';
 import { api, setAdminToken } from '../../api';
 
 const router = useRouter();
+const route = useRoute();
 const username = ref('');
 const password = ref('');
 const error = ref('');
 const loading = ref(false);
+
+// 登录后回到原本要访问的页面（如 /admin/diaries），默认进后台
+const redirectTarget = computed(() => {
+  const r = route.query.redirect;
+  return typeof r === 'string' && r.startsWith('/') ? r : '/admin';
+});
 
 async function submit() {
   error.value = '';
@@ -22,7 +29,7 @@ async function submit() {
       body: { username: username.value.trim(), password: password.value },
     });
     setAdminToken(token);
-    router.replace('/admin');
+    router.replace(redirectTarget.value);
   } catch (e) {
     error.value = e.message;
   } finally {

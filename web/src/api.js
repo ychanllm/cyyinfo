@@ -10,7 +10,8 @@ export const clearAdminToken = () => localStorage.removeItem(ADMIN_KEY);
 
 async function request(path, { method = 'GET', body, admin = false, form = null } = {}) {
   const headers = {};
-  const token = admin ? getAdminToken() : getGuestToken();
+  // 公开请求没有访客 token 时回退用管理员 token（contentGuard 两者都接受）
+  const token = admin ? getAdminToken() : (getGuestToken() || getAdminToken());
   if (token) headers.Authorization = `Bearer ${token}`;
   let payload;
   if (form) {
