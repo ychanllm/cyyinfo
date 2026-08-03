@@ -324,4 +324,33 @@ admin.delete('/messages/:id', async (c) => {
   return c.json({ ok: true });
 });
 
+// 一次性导入：将 R2 photos/ 下已有文件批量录入 D1
+admin.post('/photos/import-r2', async (c) => {
+  const { album_id } = await c.req.json<{ album_id: number }>();
+  if (!album_id) return c.json({ detail: '缺少 album_id' }, 400);
+  const album = await c.env.DB.prepare('SELECT id FROM albums WHERE id = ?').bind(album_id).first();
+  if (!album) return c.json({ detail: '相册不存在' }, 404);
+
+  // 取已入库的 filename
+  const { results: existing } = await c.env.DB.prepare('SELECT filename FROM photos').all<{ filename: string }>();
+  const existingSet = new Set(existing.map(r => r.filename));
+
+  const imported: string[] = [];
+  const skipped: string[] = [];
+  let cursor: string | undefined;
+
+  do {
+    const listed = await c.env.UPLOADS.list({ prefix: 'photos/', cursor });
+    for (const obj of listed.objects) {
+      if (existingSet.has(obj.key)) { skipped.push(obj.key); continue; }
+      await c.env.DB.prepare('INSERT INTO photos (album_id, filename, caption) VALUES (?, ?, ?)')
+        .bind(album_id, obj.key, '').run();
+      imported.push(obj.key);
+    }
+    cursor = listed.truncated ? listed.cursor : undefined;
+  } while (cursor);
+
+  return c.json({ imported: imported.length, skipped: skipped.length, album_id });
+});
+
 export default admin;

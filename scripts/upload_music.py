@@ -34,12 +34,12 @@ def main(music_dir: Path, dry_run: bool) -> None:
             track_no, title, ext = int(m.group(1)), m.group(2), m.group(3).lower()
             key = f"music/{uuid.uuid4()}.{ext}"
             cmd = ["npx", "wrangler", "r2", "object", "put",
-                   f"{BUCKET}/{key}", "--file", str(f), "--remote"]
+                   f"{BUCKET}/{key}", "--file", str(f)]
             if dry_run:
                 print(f"[dry-run] (cwd={WORKER_DIR}) {' '.join(cmd)}")
             else:
                 # wrangler.toml 在 worker/ 下，wrangler 需在该目录运行
-                subprocess.run(cmd, check=True, cwd=WORKER_DIR)
+                subprocess.run(cmd, check=True, cwd=WORKER_DIR, shell=True)
             safe = title.replace("'", "''")
             sql_lines.append(
                 f"INSERT INTO songs (album_id, title, track_no, filename) "
