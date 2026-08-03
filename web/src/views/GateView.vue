@@ -51,6 +51,7 @@ async function submit() {
       <p v-if="error" class="error">{{ error }}</p>
       <button type="submit" :disabled="loading">{{ loading ? '验证中…' : '进入小站' }}</button>
     </form>
+    <router-link to="/admin/login" class="admin-link">管理员入口</router-link>
   </div>
 </template>
 
@@ -113,5 +114,12 @@ button:hover:not(:disabled) {
 button:disabled {
   opacity: 0.6;
   cursor: default;
+}
+.admin-link {
+  display: block;
+  margin-top: 20px;
+  font-size: 13px;
+  color: var(--color-text-light);
+  text-align: center;
 }
 </style>
