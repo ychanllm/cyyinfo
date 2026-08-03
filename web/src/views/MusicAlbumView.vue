@@ -39,6 +39,8 @@ function fmt(sec) {
 
 <template>
   <div class="album-detail">
+    <router-link to="/music" class="back">&larr; 返回音乐</router-link>
+
     <p v-if="loading" class="hint">加载中…</p>
     <p v-else-if="error" class="hint">{{ error }}</p>
 
@@ -89,6 +91,11 @@ function fmt(sec) {
 </template>
 
 <style scoped>
+.back {
+  display: inline-block;
+  font-size: 14px;
+  margin-bottom: 16px;
+}
 .hint {
   color: var(--color-text-light);
   font-size: 14px;

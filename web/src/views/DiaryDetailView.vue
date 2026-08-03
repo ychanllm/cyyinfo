@@ -33,6 +33,8 @@ onMounted(async () => {
 
 <template>
   <div class="diary-detail">
+    <router-link to="/diaries" class="back">&larr; 返回日记</router-link>
+
     <p v-if="loading" class="hint">加载中…</p>
     <p v-else-if="error" class="hint">{{ error }}</p>
 
@@ -57,6 +59,11 @@ onMounted(async () => {
 .diary-detail {
   max-width: 680px;
   margin: 0 auto;
+}
+.back {
+  display: inline-block;
+  font-size: 14px;
+  margin-bottom: 16px;
 }
 .hint {
   color: var(--color-text-light);
