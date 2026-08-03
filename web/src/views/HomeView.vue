@@ -15,6 +15,29 @@ const diffDays = computed(() => {
   return Math.floor((Date.now() - start.getTime()) / 86400000);
 });
 
+// 首页标签：后台「设置」可自定义（{date} 会被替换成纪念日日期），留空自动生成
+const heroLabelText = computed(() => {
+  const date = status.value.anniversary_date || '';
+  const custom = status.value.hero_label;
+  if (custom) return custom.replace(/\{date\}/g, date);
+  if (diffDays.value === null) return '';
+  return diffDays.value >= 0 ? `从 ${date} 到现在` : `距离 ${date}`;
+});
+
+// 首页标题天数（正数=在一起天数，负数=距纪念日天数）
+const heroDaysText = computed(() => {
+  if (diffDays.value === null) return '';
+  return diffDays.value >= 0 ? diffDays.value + 1 : -diffDays.value;
+});
+
+// 自定义标题文案（{days} 会被替换成天数），设置后使用
+const heroTitleText = computed(() => {
+  const custom = status.value.hero_title;
+  const d = String(heroDaysText.value);
+  if (custom) return custom.replace(/\{days\}/g, d);
+  return diffDays.value !== null && diffDays.value >= 0 ? `我们在一起 ${d} 天` : `还有 ${d} 天到纪念日`;
+});
+
 function fmtDate(s) {
   return String(s || '').slice(0, 10);
 }
@@ -40,13 +63,11 @@ onMounted(async () => {
 <template>
   <div class="home">
     <section class="hero">
-      <template v-if="diffDays !== null && diffDays >= 0">
-        <p class="hero-label">从 {{ status.anniversary_date }} 到现在</p>
-        <h1 class="hero-title">我们在一起 <span class="num">{{ diffDays + 1 }}</span> 天</h1>
-      </template>
-      <template v-else-if="diffDays !== null">
-        <p class="hero-label">距离 {{ status.anniversary_date }}</p>
-        <h1 class="hero-title">还有 <span class="num">{{ -diffDays }}</span> 天到纪念日</h1>
+      <template v-if="diffDays !== null">
+        <p class="hero-label">{{ heroLabelText }}</p>
+        <h1 v-if="status.hero_title" class="hero-title">{{ heroTitleText }}</h1>
+        <h1 v-else-if="diffDays >= 0" class="hero-title">我们在一起 <span class="num">{{ diffDays + 1 }}</span> 天</h1>
+        <h1 v-else class="hero-title">还有 <span class="num">{{ -diffDays }}</span> 天到纪念日</h1>
       </template>
       <h1 v-else class="hero-title">欢迎来到{{ status.site_name || '我们的小站' }}</h1>
     </section>

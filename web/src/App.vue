@@ -1,12 +1,23 @@
 <script setup>
-import { computed } from 'vue';
+import { computed, onMounted } from 'vue';
 import { useRoute } from 'vue-router';
+import { api } from './api';
 import NavBar from './components/NavBar.vue';
 import DesktopPet from './components/DesktopPet.vue';
 import MiniPlayer from './components/MiniPlayer.vue';
 
 const route = useRoute();
 const isAdmin = computed(() => route.path.startsWith('/admin'));
+
+// 应用后台「设置 → 背景颜色」（覆盖 CSS 默认）
+onMounted(async () => {
+  try {
+    const s = await api('/site/status');
+    if (s.background_color) {
+      document.documentElement.style.setProperty('--bg', s.background_color);
+    }
+  } catch { /* 保持 CSS 默认 */ }
+});
 </script>
 
 <template>

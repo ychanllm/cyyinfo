@@ -6,6 +6,9 @@ const siteName = ref('');
 const anniversaryDate = ref('');
 const passcodeEnabled = ref(false);
 const newPasscode = ref('');
+const backgroundColor = ref('#f9e1ef');
+const heroLabel = ref('');
+const heroTitle = ref('');
 
 const loading = ref(true);
 const saving = ref(false);
@@ -20,6 +23,9 @@ async function loadSettings() {
     siteName.value = data.site_name || '';
     anniversaryDate.value = data.anniversary_date || '';
     passcodeEnabled.value = data.passcode_enabled;
+    backgroundColor.value = data.background_color || '#f9e1ef';
+    heroLabel.value = data.hero_label || '';
+    heroTitle.value = data.hero_title || '';
   } catch (e) {
     error.value = e.message;
   } finally {
@@ -35,7 +41,13 @@ async function saveBasic() {
     await api('/admin/settings', {
       method: 'PUT',
       admin: true,
-      body: { site_name: siteName.value.trim(), anniversary_date: anniversaryDate.value },
+      body: {
+        site_name: siteName.value.trim(),
+        anniversary_date: anniversaryDate.value,
+        background_color: backgroundColor.value.trim() || '',
+        hero_label: heroLabel.value.trim(),
+        hero_title: heroTitle.value.trim(),
+      },
     });
     success.value = '已保存';
   } catch (e) {
@@ -110,6 +122,19 @@ onMounted(loadSettings);
           <label class="field">
             纪念日起始日期
             <input v-model="anniversaryDate" type="date" />
+          </label>
+          <label class="field">
+            背景颜色（默认 #f9e1ef）
+            <input v-model="backgroundColor" type="color" class="color-input" />
+            <input v-model="backgroundColor" type="text" placeholder="#f9e1ef" />
+          </label>
+          <label class="field">
+            首页标签（{date} 会替换成纪念日，留空自动生成）
+            <input v-model="heroLabel" type="text" placeholder="如：从 {date} 到现在" />
+          </label>
+          <label class="field">
+            首页标题（{days} 会替换成天数，留空自动生成）
+            <input v-model="heroTitle" type="text" placeholder="如：我们在一起 {days} 天" />
           </label>
           <button type="submit" class="submit-btn" :disabled="saving">
             {{ saving ? '保存中…' : '保存' }}
@@ -206,6 +231,12 @@ onMounted(loadSettings);
 }
 .field input:focus {
   border-color: var(--color-primary);
+}
+.field .color-input {
+  width: 64px;
+  height: 40px;
+  padding: 2px;
+  cursor: pointer;
 }
 .submit-btn {
   border: none;

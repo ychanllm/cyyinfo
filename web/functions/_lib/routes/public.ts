@@ -13,6 +13,9 @@ pub.get('/site/status', async (c) => {
     site_name: await getSetting(c.env.DB, 'site_name'),
     anniversary_date: await getSetting(c.env.DB, 'anniversary_date'),
     passcode_enabled: Boolean(hash),
+    background_color: await getSetting(c.env.DB, 'background_color'),
+    hero_label: await getSetting(c.env.DB, 'hero_label'),
+    hero_title: await getSetting(c.env.DB, 'hero_title'),
   });
 });
 

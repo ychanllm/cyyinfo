@@ -19,7 +19,7 @@
 
 /* ===== 温暖手账 + 拍立得设计变量 ===== */
 :root {
-  --bg: #FFF8F0;                /* 奶油白 */
+  --bg: #f9e1ef;                /* 默认背景：取色自 resource/微信图片_*.jpg，可在后台「设置」更换 */
   --bg-deep: #F4D9B6;           /* 旧纸张黄 */
   --color-primary: #E88D67;     /* 焦糖橙 */
   --color-primary-dark: #BE6A3E;

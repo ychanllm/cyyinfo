@@ -102,13 +102,19 @@ admin.get('/settings', async (c) => {
     site_name: await getSetting(c.env.DB, 'site_name'),
     anniversary_date: await getSetting(c.env.DB, 'anniversary_date'),
     passcode_enabled: Boolean(await getSetting(c.env.DB, 'site_passcode_hash')),
+    background_color: await getSetting(c.env.DB, 'background_color'),
+    hero_label: await getSetting(c.env.DB, 'hero_label'),
+    hero_title: await getSetting(c.env.DB, 'hero_title'),
   });
 });
 
 admin.put('/settings', async (c) => {
-  const { site_name, anniversary_date, passcode } = await c.req.json();
+  const { site_name, anniversary_date, passcode, background_color, hero_label, hero_title } = await c.req.json();
   if (site_name !== undefined) await setSetting(c.env.DB, 'site_name', String(site_name));
   if (anniversary_date !== undefined) await setSetting(c.env.DB, 'anniversary_date', String(anniversary_date));
+  if (background_color !== undefined) await setSetting(c.env.DB, 'background_color', String(background_color));
+  if (hero_label !== undefined) await setSetting(c.env.DB, 'hero_label', String(hero_label));
+  if (hero_title !== undefined) await setSetting(c.env.DB, 'hero_title', String(hero_title));
   if (passcode !== undefined) {
     await setSetting(c.env.DB, 'site_passcode_hash',
       passcode === '' ? '' : bcrypt.hashSync(String(passcode), 10));
