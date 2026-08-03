@@ -7,10 +7,12 @@ const status = ref({});
 const diaries = ref([]);
 const photo = ref(null);
 
-const days = computed(() => {
+// 纪念日距今的天数差（负数=还没到，正数=已在一起 N 天）
+const diffDays = computed(() => {
   if (!status.value.anniversary_date) return null;
   const start = new Date(status.value.anniversary_date + 'T00:00:00');
-  return Math.floor((Date.now() - start.getTime()) / 86400000) + 1;
+  if (Number.isNaN(start.getTime())) return null;
+  return Math.floor((Date.now() - start.getTime()) / 86400000);
 });
 
 function fmtDate(s) {
@@ -38,9 +40,13 @@ onMounted(async () => {
 <template>
   <div class="home">
     <section class="hero">
-      <template v-if="days !== null">
+      <template v-if="diffDays !== null && diffDays >= 0">
         <p class="hero-label">从 {{ status.anniversary_date }} 到现在</p>
-        <h1 class="hero-title">我们在一起 <span class="num">{{ days }}</span> 天</h1>
+        <h1 class="hero-title">我们在一起 <span class="num">{{ diffDays + 1 }}</span> 天</h1>
+      </template>
+      <template v-else-if="diffDays !== null">
+        <p class="hero-label">距离 {{ status.anniversary_date }}</p>
+        <h1 class="hero-title">还有 <span class="num">{{ -diffDays }}</span> 天到纪念日</h1>
       </template>
       <h1 v-else class="hero-title">欢迎来到{{ status.site_name || '我们的小站' }}</h1>
     </section>
