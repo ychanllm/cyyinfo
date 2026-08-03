@@ -9,6 +9,11 @@ const newPasscode = ref('');
 const backgroundColor = ref('#f9e1ef');
 const heroLabel = ref('');
 const heroTitle = ref('');
+const smtpHost = ref('smtp.qq.com');
+const smtpPort = ref('587');
+const smtpUser = ref('');
+const smtpPass = ref('');
+const defaultRecipient = ref('');
 
 const loading = ref(true);
 const saving = ref(false);
@@ -26,6 +31,11 @@ async function loadSettings() {
     backgroundColor.value = data.background_color || '#f9e1ef';
     heroLabel.value = data.hero_label || '';
     heroTitle.value = data.hero_title || '';
+    smtpHost.value = data.smtp_host || 'smtp.qq.com';
+    smtpPort.value = data.smtp_port || '587';
+    smtpUser.value = data.smtp_user || '';
+    smtpPass.value = data.smtp_pass || '';
+    defaultRecipient.value = data.default_recipient || '';
   } catch (e) {
     error.value = e.message;
   } finally {
@@ -50,6 +60,30 @@ async function saveBasic() {
       },
     });
     success.value = '已保存';
+  } catch (e) {
+    error.value = e.message;
+  } finally {
+    saving.value = false;
+  }
+}
+
+async function saveSmtp() {
+  saving.value = true;
+  error.value = '';
+  success.value = '';
+  try {
+    await api('/admin/settings', {
+      method: 'PUT',
+      admin: true,
+      body: {
+        smtp_host: smtpHost.value.trim(),
+        smtp_port: smtpPort.value.trim() || '587',
+        smtp_user: smtpUser.value.trim(),
+        smtp_pass: smtpPass.value.trim(),
+        default_recipient: defaultRecipient.value.trim(),
+      },
+    });
+    success.value = '邮件设置已保存';
   } catch (e) {
     error.value = e.message;
   } finally {
@@ -172,6 +206,34 @@ onMounted(loadSettings);
               清除口令
             </button>
           </div>
+        </form>
+      </section>
+
+      <section class="card">
+        <h3>邮件设置（提醒事项用）</h3>
+        <p class="status">用于「提醒事项」到点自动发邮件。发件用 QQ 邮箱 SMTP：QQ邮箱 → 设置 → 账户 → 开启 SMTP 服务后获取授权码（不是登录密码）。</p>
+        <form class="form" @submit.prevent="saveSmtp">
+          <label class="field">
+            SMTP 服务器
+            <input v-model="smtpHost" type="text" placeholder="smtp.qq.com" />
+          </label>
+          <label class="field">
+            SMTP 端口
+            <input v-model="smtpPort" type="text" placeholder="587" />
+          </label>
+          <label class="field">
+            发件 QQ 邮箱
+            <input v-model="smtpUser" type="email" placeholder="xxx@qq.com" />
+          </label>
+          <label class="field">
+            SMTP 授权码
+            <input v-model="smtpPass" type="password" placeholder="16 位授权码" autocomplete="new-password" />
+          </label>
+          <label class="field">
+            默认收件邮箱（提醒默认发到这里）
+            <input v-model="defaultRecipient" type="email" placeholder="xxx@qq.com" />
+          </label>
+          <button type="submit" class="submit-btn" :disabled="saving">{{ saving ? '保存中…' : '保存' }}</button>
         </form>
       </section>
     </template>

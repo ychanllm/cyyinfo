@@ -4,6 +4,7 @@ import type { Env } from '../types';
 import { signJwt } from '../auth';
 import { rateLimit, clientIp } from '../security';
 import { contentGuard, getSetting } from '../guard';
+import { sendEmail } from '../smtp';
 
 const pub = new Hono<{ Bindings: Env }>();
 
@@ -31,6 +32,53 @@ pub.post('/passcode/verify', async (c) => {
   }
   const token = await signJwt(c.env, { role: 'guest' }, 24 * 7);
   return c.json({ token });
+});
+
+// 定时任务触发：查询到点未发送的提醒并发送邮件（用 x-reminder-token 鉴权）
+pub.post('/reminders/check', async (c) => {
+  const token = c.req.header('x-reminder-token');
+  if (!c.env.REMINDER_TOKEN || token !== c.env.REMINDER_TOKEN) {
+    return c.json({ detail: '未授权' }, 401);
+  }
+  // 当前中国时区(UTC+8)时间，与前端 datetime-local 存储的 send_at 对齐
+  const now = new Date(Date.now() + 8 * 3600 * 1000);
+  const p = (n: number) => String(n).padStart(2, '0');
+  const nowStr = `${now.getUTCFullYear()}-${p(now.getUTCMonth() + 1)}-${p(now.getUTCDate())} `
+    + `${p(now.getUTCHours())}:${p(now.getUTCMinutes())}:${p(now.getUTCSeconds())}`;
+
+  const { results: due } = await c.env.DB.prepare(
+    'SELECT * FROM reminders WHERE status = ? AND send_at <= ? ORDER BY send_at'
+  ).bind('pending', nowStr).all();
+
+  const smtp = {
+    host: (await getSetting(c.env.DB, 'smtp_host')) || 'smtp.qq.com',
+    port: Number((await getSetting(c.env.DB, 'smtp_port')) || 587),
+    user: await getSetting(c.env.DB, 'smtp_user'),
+    pass: await getSetting(c.env.DB, 'smtp_pass'),
+    from: await getSetting(c.env.DB, 'smtp_user'),
+  };
+  const defaultRecipient = await getSetting(c.env.DB, 'default_recipient');
+
+  let sent = 0;
+  for (const r of due) {
+    const to = r.recipient || defaultRecipient;
+    if (!to || !smtp.user || !smtp.pass) {
+      await c.env.DB.prepare("UPDATE reminders SET status='failed', error='SMTP 未配置', updated_at=datetime('now') WHERE id=?")
+        .bind(r.id).run();
+      continue;
+    }
+    try {
+      await sendEmail(smtp, to, `提醒：${r.title}`, r.content || r.title);
+      await c.env.DB.prepare("UPDATE reminders SET status='sent', error='', updated_at=datetime('now') WHERE id=?")
+        .bind(r.id).run();
+      sent++;
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      await c.env.DB.prepare("UPDATE reminders SET status='failed', error=?, updated_at=datetime('now') WHERE id=?")
+        .bind(msg, r.id).run();
+    }
+  }
+  return c.json({ checked: due.length, sent, failed: due.length - sent });
 });
 
 // 内容接口挂在 contentGuard 之后（后续任务在此追加路由）

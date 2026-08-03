@@ -58,6 +58,8 @@ admin.use('/messages', adminAuth);
 admin.use('/messages/*', adminAuth);
 admin.use('/settings', adminAuth);
 admin.use('/settings/*', adminAuth);
+admin.use('/reminders', adminAuth);
+admin.use('/reminders/*', adminAuth);
 
 // ---- 账号管理 ----
 admin.get('/users', async (c) => {
@@ -105,16 +107,29 @@ admin.get('/settings', async (c) => {
     background_color: await getSetting(c.env.DB, 'background_color'),
     hero_label: await getSetting(c.env.DB, 'hero_label'),
     hero_title: await getSetting(c.env.DB, 'hero_title'),
+    smtp_host: await getSetting(c.env.DB, 'smtp_host'),
+    smtp_port: await getSetting(c.env.DB, 'smtp_port'),
+    smtp_user: await getSetting(c.env.DB, 'smtp_user'),
+    smtp_pass: await getSetting(c.env.DB, 'smtp_pass'),
+    default_recipient: await getSetting(c.env.DB, 'default_recipient'),
   });
 });
 
 admin.put('/settings', async (c) => {
-  const { site_name, anniversary_date, passcode, background_color, hero_label, hero_title } = await c.req.json();
+  const {
+    site_name, anniversary_date, passcode, background_color, hero_label, hero_title,
+    smtp_host, smtp_port, smtp_user, smtp_pass, default_recipient,
+  } = await c.req.json();
   if (site_name !== undefined) await setSetting(c.env.DB, 'site_name', String(site_name));
   if (anniversary_date !== undefined) await setSetting(c.env.DB, 'anniversary_date', String(anniversary_date));
   if (background_color !== undefined) await setSetting(c.env.DB, 'background_color', String(background_color));
   if (hero_label !== undefined) await setSetting(c.env.DB, 'hero_label', String(hero_label));
   if (hero_title !== undefined) await setSetting(c.env.DB, 'hero_title', String(hero_title));
+  if (smtp_host !== undefined) await setSetting(c.env.DB, 'smtp_host', String(smtp_host));
+  if (smtp_port !== undefined) await setSetting(c.env.DB, 'smtp_port', String(smtp_port));
+  if (smtp_user !== undefined) await setSetting(c.env.DB, 'smtp_user', String(smtp_user));
+  if (smtp_pass !== undefined) await setSetting(c.env.DB, 'smtp_pass', String(smtp_pass));
+  if (default_recipient !== undefined) await setSetting(c.env.DB, 'default_recipient', String(default_recipient));
   if (passcode !== undefined) {
     await setSetting(c.env.DB, 'site_passcode_hash',
       passcode === '' ? '' : bcrypt.hashSync(String(passcode), 10));
@@ -357,6 +372,37 @@ admin.post('/photos/import-r2', async (c) => {
   } while (cursor);
 
   return c.json({ imported: imported.length, skipped: skipped.length, album_id });
+});
+
+// ---- 提醒事项 CRUD ----
+admin.get('/reminders', async (c) => {
+  const { results } = await c.env.DB.prepare(
+    'SELECT * FROM reminders ORDER BY send_at, id'
+  ).all();
+  return c.json(results);
+});
+
+admin.post('/reminders', async (c) => {
+  const { title, content = '', send_at, recipient = '' } = await c.req.json();
+  if (!title || !send_at) return c.json({ detail: '标题和发送时间必填' }, 400);
+  const r = await c.env.DB.prepare(
+    'INSERT INTO reminders (title, content, send_at, recipient) VALUES (?, ?, ?, ?)'
+  ).bind(String(title), String(content), String(send_at), String(recipient)).run();
+  return c.json({ id: r.meta.last_row_id });
+});
+
+admin.put('/reminders/:id', async (c) => {
+  const { title, content, send_at, recipient, status } = await c.req.json();
+  if (!title || !send_at) return c.json({ detail: '标题和发送时间必填' }, 400);
+  await c.env.DB.prepare(
+    `UPDATE reminders SET title = ?, content = ?, send_at = ?, recipient = ?, status = ?, updated_at = datetime('now') WHERE id = ?`
+  ).bind(String(title), String(content), String(send_at), String(recipient), status || 'pending', c.req.param('id')).run();
+  return c.json({ ok: true });
+});
+
+admin.delete('/reminders/:id', async (c) => {
+  await c.env.DB.prepare('DELETE FROM reminders WHERE id = ?').bind(c.req.param('id')).run();
+  return c.json({ ok: true });
 });
 
 export default admin;

@@ -8,6 +8,7 @@ const navItems = [
   { to: '/admin/photos', label: '照片' },
   { to: '/admin/diaries', label: '日记' },
   { to: '/admin/music', label: '音乐' },
+  { to: '/admin/reminders', label: '提醒' },
   { to: '/admin/messages', label: '留言' },
   { to: '/admin/users', label: '账号' },
   { to: '/admin/settings', label: '设置' },
