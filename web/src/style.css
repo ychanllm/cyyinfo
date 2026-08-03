@@ -1,17 +1,41 @@
-/* 暖色纪念册风格设计变量 */
+/* ===== 字体（自托管到 R2，见 scripts/fetch_fonts.py） ===== */
+@font-face {
+  font-family: 'ZCOOL KuaiLe';
+  src: url('/uploads/fonts/zcool-kuailes-regular.woff2') format('woff2');
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Noto Serif SC';
+  src: url('/uploads/fonts/noto-serif-sc-light.woff2') format('woff2');
+  font-weight: 300;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Caveat';
+  src: url('/uploads/fonts/caveat-regular.woff2') format('woff2');
+  font-display: swap;
+}
+
+/* ===== 温暖手账 + 拍立得设计变量 ===== */
 :root {
-  --bg: #faf6f0;
-  --bg-deep: #f3ece2;
-  --color-primary: #b0703c;
-  --color-primary-dark: #96582b;
-  --color-accent: #d9a05b;
-  --color-text: #4a3f35;
-  --color-text-light: #8a7a6a;
-  --color-card: #fffdf9;
-  --color-border: #e8ddd0;
+  --bg: #FFF8F0;                /* 奶油白 */
+  --bg-deep: #F4D9B6;           /* 旧纸张黄 */
+  --color-primary: #E88D67;     /* 焦糖橙 */
+  --color-primary-dark: #BE6A3E;
+  --color-accent: #F3B6A5;      /* 柔和桃 */
+  --color-text: #4A3125;        /* 深棕 */
+  --color-text-light: #6B6B6B;  /* 铅笔灰 */
+  --color-card: #F5F2EB;        /* 拍立得边框白 */
+  --color-border: #EAD9C8;
+  --color-stamp: #C0504D;       /* 印章红（小面积） */
+  --color-tape: #7BA7BC;        /* 胶带蓝绿（小面积） */
   --radius: 12px;
-  --shadow: 0 4px 16px rgba(120, 90, 60, 0.1);
-  --shadow-lg: 0 8px 32px rgba(120, 90, 60, 0.16);
+  --shadow: 0 4px 16px rgba(139, 96, 66, 0.12);
+  --shadow-lg: 0 10px 32px rgba(139, 96, 66, 0.2);
+  --font-title: 'ZCOOL KuaiLe', 'Kaiti SC', 'STKaiti', 'KaiTi', 'SimSun', serif;
+  --font-body: 'Noto Serif SC', 'Songti SC', 'STSong', 'SimSun', serif;
+  --font-hand: 'Caveat', 'Segoe Script', cursive;
 }
 
 * {
@@ -27,7 +51,8 @@ body,
 }
 
 body {
-  font-family: 'PingFang SC', 'Microsoft YaHei', 'Helvetica Neue', Arial, sans-serif;
+  font-family: var(--font-body);
+  font-weight: 300;
   background: var(--bg);
   color: var(--color-text);
   line-height: 1.6;
@@ -35,8 +60,13 @@ body {
 }
 
 a {
-  color: var(--color-primary);
+  color: var(--color-primary-dark);
   text-decoration: none;
+}
+
+/* 手账英文手写字体（日期、caption、小字强调） */
+.font-hand {
+  font-family: var(--font-hand);
 }
 
 input,
@@ -144,4 +174,56 @@ button {
 }
 .md-body th {
   background: var(--bg-deep);
+}
+
+/* ===== 拍立得卡片（相册列表 / 相册详情 / 首页复用） ===== */
+.polaroid {
+  position: relative;
+  display: block;
+  background: var(--color-card);
+  padding: 12px 12px 14px;
+  box-shadow: var(--shadow);
+  transform: rotate(var(--tilt, 0deg));
+  transition: transform 0.25s ease, box-shadow 0.25s ease;
+}
+.polaroid:hover {
+  transform: rotate(0deg) translateY(-4px);
+  box-shadow: var(--shadow-lg);
+}
+.polaroid .ph-img {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  object-fit: cover;
+  display: block;
+  background: var(--bg-deep);
+}
+.polaroid .ph-caption {
+  font-family: var(--font-hand);
+  color: var(--color-text-light);
+  font-size: 15px;
+  text-align: center;
+  padding-top: 10px;
+  line-height: 1.2;
+  letter-spacing: 0.02em;
+}
+
+/* 手账胶带装饰（拍立得顶部） */
+.tape {
+  position: absolute;
+  top: -14px;
+  left: 50%;
+  width: 84px;
+  height: 26px;
+  transform: translateX(-50%) rotate(-4deg);
+  background: rgba(123, 167, 188, 0.5); /* 胶带蓝绿 */
+  border-left: 2px dashed rgba(255, 255, 255, 0.55);
+  border-right: 2px dashed rgba(255, 255, 255, 0.55);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+  z-index: 1;
+}
+.tape.peach {
+  background: rgba(243, 182, 165, 0.6); /* 柔和桃 */
+}
+.tape.stamp {
+  background: rgba(192, 80, 77, 0.45); /* 印章红 */
 }

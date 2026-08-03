@@ -45,7 +45,7 @@ const links = [
   position: sticky;
   top: 0;
   z-index: 10;
-  background: rgba(255, 253, 249, 0.92);
+  background: rgba(255, 248, 240, 0.92);
   backdrop-filter: blur(8px);
   border-bottom: 1px solid var(--color-border);
 }
@@ -59,9 +59,10 @@ const links = [
   justify-content: space-between;
 }
 .brand {
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--color-primary);
+  font-family: var(--font-title);
+  font-size: 20px;
+  font-weight: 400;
+  color: var(--color-primary-dark);
 }
 .links {
   display: flex;

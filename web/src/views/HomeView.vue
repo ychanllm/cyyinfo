@@ -62,9 +62,10 @@ onMounted(async () => {
 
       <section v-if="photo" class="card photo-card">
         <h2 class="card-title">随手一拍</h2>
-        <router-link to="/albums" class="photo-link">
+        <router-link to="/albums" class="polaroid photo-link">
+          <span class="tape peach"></span>
           <img :src="`/uploads/${photo.cover_filename}`" :alt="photo.title" class="photo" />
-          <p class="photo-title">{{ photo.title }}</p>
+          <p class="photo-title font-hand">{{ photo.title }}</p>
         </router-link>
       </section>
     </div>
@@ -89,7 +90,9 @@ onMounted(async () => {
   margin-bottom: 8px;
 }
 .hero-title {
-  font-size: 32px;
+  font-family: var(--font-title);
+  font-size: 34px;
+  font-weight: 400;
   color: var(--color-text);
 }
 .num {
@@ -160,16 +163,18 @@ onMounted(async () => {
 }
 .photo-link {
   display: block;
+  margin-top: 8px;
 }
 .photo {
   width: 100%;
-  border-radius: 8px;
-  display: block;
+  aspect-ratio: 4 / 3;
   object-fit: cover;
+  display: block;
+  border-radius: 4px;
 }
 .photo-title {
   margin-top: 8px;
-  font-size: 14px;
+  font-size: 17px;
   color: var(--color-text-light);
   text-align: center;
 }

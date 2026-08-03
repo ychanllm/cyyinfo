@@ -27,11 +27,13 @@ onMounted(async () => {
 
     <div v-else class="grid">
       <router-link
-        v-for="a in albums"
+        v-for="(a, i) in albums"
         :key="a.id"
         :to="`/albums/${a.id}`"
-        class="card"
+        class="polaroid card"
+        :style="{ '--tilt': i % 2 ? '1.3deg' : '-1.4deg' }"
       >
+        <span class="tape" :class="i % 3 === 0 ? 'peach' : i % 3 === 1 ? 'stamp' : ''"></span>
         <div class="cover">
           <img
             v-if="a.cover_filename"
@@ -54,9 +56,10 @@ onMounted(async () => {
 
 <style scoped>
 .page-title {
-  font-size: 26px;
+  font-family: var(--font-title);
+  font-size: 28px;
   color: var(--color-text);
-  margin-bottom: 24px;
+  margin-bottom: 28px;
 }
 .hint {
   color: var(--color-text-light);
@@ -67,7 +70,8 @@ onMounted(async () => {
 .grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 20px;
+  gap: 30px 24px;
+  padding-top: 20px; /* 给胶带留出头顶空间 */
 }
 @media (max-width: 720px) {
   .grid {
@@ -80,18 +84,11 @@ onMounted(async () => {
   }
 }
 .card {
-  background: var(--color-card);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
-  overflow: hidden;
   color: var(--color-text);
-  transition: box-shadow 0.2s;
-}
-.card:hover {
-  box-shadow: var(--shadow-lg);
 }
 .cover {
   aspect-ratio: 4 / 3;
+  overflow: hidden;
 }
 .cover-img {
   width: 100%;
@@ -108,15 +105,18 @@ onMounted(async () => {
   justify-content: center;
 }
 .placeholder-title {
-  color: var(--color-primary);
-  font-size: 18px;
-  font-weight: 600;
+  color: var(--color-primary-dark);
+  font-family: var(--font-title);
+  font-size: 20px;
 }
 .meta {
-  padding: 14px 16px 16px;
+  padding: 12px 4px 2px;
+  text-align: center;
 }
 .title {
-  font-size: 16px;
+  font-family: var(--font-title);
+  font-size: 20px;
+  font-weight: 400;
   margin-bottom: 4px;
 }
 .desc {
