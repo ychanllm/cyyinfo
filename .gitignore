@@ -6,3 +6,4 @@ dist/
 scripts/out/
 scripts/fonts/
 resource/
+web/_worker.bundle
