@@ -206,4 +206,56 @@ onMounted(loadDiaries);
   border-color: #c0392b;
   color: #c0392b;
 }
+
+/* 移动端：表格转卡片，确保新增/编辑/发布/删除入口都可见 */
+@media (max-width: 720px) {
+  .diary-table,
+  .diary-table tbody,
+  .diary-table tr,
+  .diary-table td {
+    display: block;
+    width: 100%;
+  }
+  .diary-table thead {
+    display: none;
+  }
+  .diary-table tr {
+    background: var(--color-card);
+    border: 1px solid var(--color-border);
+    border-radius: 10px;
+    padding: 12px 14px;
+    margin-bottom: 12px;
+  }
+  .diary-table td {
+    border: none;
+    padding: 4px 0;
+  }
+  .title-cell {
+    max-width: none;
+    white-space: normal;
+    font-size: 16px;
+    font-weight: 600;
+  }
+  .slug-cell::before {
+    content: 'slug：';
+  }
+  .col-time::before {
+    content: '更新时间：';
+  }
+  .slug-cell,
+  .col-time {
+    font-size: 13px;
+    color: var(--color-text-light);
+  }
+  .col-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 8px;
+  }
+  .col-actions .btn {
+    margin-right: 0;
+    flex: 1;
+    text-align: center;
+  }
+}
 </style>
