@@ -9,6 +9,8 @@ const total = ref(0);
 const page = ref(1);
 const loading = ref(true);
 const error = ref('');
+const categories = ref([]); // 分类筛选 chips
+const activeCategory = ref(null); // null = 全部
 
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / PAGE_SIZE)));
 
@@ -22,7 +24,9 @@ async function load(p) {
   loading.value = true;
   error.value = '';
   try {
-    const data = await api(`/diaries?page=${p}`);
+    const q = new URLSearchParams({ page: String(p) });
+    if (activeCategory.value) q.set('category', activeCategory.value);
+    const data = await api(`/diaries?${q}`);
     diaries.value = data.items || [];
     total.value = data.total || 0;
     page.value = p;
@@ -33,16 +37,45 @@ async function load(p) {
   }
 }
 
-onMounted(() => load(1));
+function selectCategory(id) {
+  activeCategory.value = id;
+  load(1); // 切换分类回到第 1 页
+}
+
+onMounted(async () => {
+  load(1);
+  try {
+    categories.value = await api('/diary-categories');
+  } catch { /* 分类加载失败不阻塞日记列表 */ }
+});
 </script>
 
 <template>
   <div class="diaries">
     <h1 class="page-title">日记</h1>
 
+    <div v-if="categories.length" class="cat-filter">
+      <button
+        class="chip"
+        :class="{ active: activeCategory === null }"
+        @click="selectCategory(null)"
+      >全部</button>
+      <button
+        v-for="cat in categories"
+        :key="cat.id"
+        class="chip"
+        :class="{ active: activeCategory === cat.id }"
+        @click="selectCategory(cat.id)"
+      >
+        {{ cat.name }}<span v-if="cat.count" class="chip-count">{{ cat.count }}</span>
+      </button>
+    </div>
+
     <p v-if="loading" class="hint">加载中…</p>
     <p v-else-if="error" class="hint">{{ error }}</p>
-    <p v-else-if="!diaries.length" class="hint">还没有日记，敬请期待</p>
+    <p v-else-if="!diaries.length" class="hint">
+      {{ activeCategory ? '该分类下还没有日记' : '还没有日记，敬请期待' }}
+    </p>
 
     <template v-else>
       <router-link
@@ -60,7 +93,10 @@ onMounted(() => load(1));
         <div class="meta">
           <h2 class="title">{{ d.title }}</h2>
           <p v-if="d.excerpt" class="excerpt">{{ d.excerpt }}</p>
-          <p class="info">{{ d.author }} · {{ fmtDate(d.published_at) }}</p>
+          <p class="info">
+            <span v-if="d.category_name" class="cat-badge">{{ d.category_name }}</span>
+            {{ d.author }} · {{ fmtDate(d.published_at) }}
+          </p>
         </div>
       </router-link>
 
@@ -83,6 +119,44 @@ onMounted(() => load(1));
   font-size: 14px;
   text-align: center;
   padding: 32px 0;
+}
+.cat-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+.chip {
+  border: 1px solid var(--color-border);
+  background: var(--color-card);
+  border-radius: 999px;
+  padding: 6px 14px;
+  font-size: 13px;
+  color: var(--color-text);
+  cursor: pointer;
+}
+.chip:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+.chip.active {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: #fff;
+}
+.chip-count {
+  margin-left: 4px;
+  opacity: 0.7;
+  font-size: 12px;
+}
+.cat-badge {
+  display: inline-block;
+  background: var(--color-primary);
+  color: #fff;
+  font-size: 12px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  margin-right: 6px;
 }
 .card {
   display: block;

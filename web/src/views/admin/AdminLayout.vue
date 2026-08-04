@@ -7,6 +7,7 @@ const router = useRouter();
 const navItems = [
   { to: '/admin/photos', label: '照片' },
   { to: '/admin/diaries', label: '日记' },
+  { to: '/admin/diary-categories', label: '分类' },
   { to: '/admin/music', label: '音乐' },
   { to: '/admin/reminders', label: '提醒' },
   { to: '/admin/messages', label: '留言' },

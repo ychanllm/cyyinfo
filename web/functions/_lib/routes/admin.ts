@@ -52,6 +52,8 @@ admin.use('/users', adminAuth);
 admin.use('/users/*', adminAuth);
 admin.use('/diaries', adminAuth);
 admin.use('/diaries/*', adminAuth);
+admin.use('/diary-categories', adminAuth);
+admin.use('/diary-categories/*', adminAuth);
 admin.use('/music', adminAuth);
 admin.use('/music/*', adminAuth);
 admin.use('/messages', adminAuth);
@@ -206,7 +208,9 @@ admin.delete('/photos/:id', async (c) => {
 // ---- 日记 CRUD ----
 admin.get('/diaries', async (c) => {
   const { results } = await c.env.DB.prepare(
-    'SELECT id, title, slug, status, cover_filename, published_at, created_at, updated_at FROM diaries ORDER BY id DESC'
+    `SELECT d.id, d.title, d.slug, d.status, d.cover_filename, d.published_at, d.created_at, d.updated_at,
+            c.id AS category_id, c.name AS category_name
+     FROM diaries d LEFT JOIN diary_categories c ON c.id = d.category_id ORDER BY d.id DESC`
   ).all();
   return c.json(results);
 });
@@ -222,16 +226,20 @@ admin.get('/diaries/:id', async (c) => {
 
 admin.post('/diaries', async (c) => {
   const adminUser = c.get('admin') as { id: number };
-  const { title, content_md = '', slug = null, status = 'draft' } = await c.req.json();
+  const { title, content_md = '', slug = null, status = 'draft', category_id = null } = await c.req.json();
   if (!title) return c.json({ detail: '标题必填' }, 400);
   if (slug) {
     const dup = await c.env.DB.prepare('SELECT id FROM diaries WHERE slug = ?').bind(slug).first();
     if (dup) return c.json({ detail: 'slug 已被占用' }, 400);
   }
+  if (category_id) {
+    const cat = await c.env.DB.prepare('SELECT id FROM diary_categories WHERE id = ?').bind(category_id).first();
+    if (!cat) return c.json({ detail: '分类不存在' }, 400);
+  }
   const publishedAt = status === 'published' ? new Date().toISOString() : null;
   const r = await c.env.DB.prepare(
-    'INSERT INTO diaries (author_id, title, slug, content_md, status, published_at) VALUES (?, ?, ?, ?, ?, ?)'
-  ).bind(adminUser.id, title, slug, content_md, status, publishedAt).run();
+    'INSERT INTO diaries (author_id, title, slug, content_md, status, published_at, category_id) VALUES (?, ?, ?, ?, ?, ?, ?)'
+  ).bind(adminUser.id, title, slug, content_md, status, publishedAt, category_id || null).run();
   const diaryId = r.meta.last_row_id;
   // 创建即第 1 次编辑
   await c.env.DB.prepare('INSERT INTO diary_versions (diary_id, version, title, content_md) VALUES (?, 1, ?, ?)')
@@ -240,7 +248,7 @@ admin.post('/diaries', async (c) => {
 });
 
 admin.put('/diaries/:id', async (c) => {
-  const { title, content_md, slug, status } = await c.req.json();
+  const { title, content_md, slug, status, category_id } = await c.req.json();
   const old = await c.env.DB.prepare('SELECT * FROM diaries WHERE id = ?').bind(c.req.param('id'))
     .first<{ status: string; published_at: string | null; title: string; content_md: string }>();
   if (!old) return c.json({ detail: '日记不存在' }, 404);
@@ -249,15 +257,29 @@ admin.put('/diaries/:id', async (c) => {
       .bind(slug, c.req.param('id')).first();
     if (dup) return c.json({ detail: 'slug 已被占用' }, 400);
   }
+  // category_id 允许写 null 清空分类，但「仅切状态」的请求不带该字段时不应改动它
+  const categoryId = category_id === undefined ? undefined
+    : (category_id ? Number(category_id) : null);
+  if (categoryId !== undefined && categoryId !== null) {
+    const cat = await c.env.DB.prepare('SELECT id FROM diary_categories WHERE id = ?').bind(categoryId).first();
+    if (!cat) return c.json({ detail: '分类不存在' }, 400);
+  }
   // 首次发布时记录 published_at，撤回后再发布不重置
   const publishedAt = status === 'published' && old.published_at == null
     ? new Date().toISOString() : old.published_at;
   const diaryId = Number(c.req.param('id'));
-  await c.env.DB.prepare(
-    `UPDATE diaries SET title = COALESCE(?, title), content_md = COALESCE(?, content_md),
-     slug = COALESCE(?, slug), status = COALESCE(?, status), published_at = ?,
-     updated_at = datetime('now') WHERE id = ?`
-  ).bind(title ?? null, content_md ?? null, slug ?? null, status ?? null, publishedAt, diaryId).run();
+  const setParts = [
+    'title = COALESCE(?, title)',
+    'content_md = COALESCE(?, content_md)',
+    'slug = COALESCE(?, slug)',
+    'status = COALESCE(?, status)',
+    'published_at = ?',
+    "updated_at = datetime('now')",
+  ];
+  const params: unknown[] = [title ?? null, content_md ?? null, slug ?? null, status ?? null, publishedAt];
+  if (categoryId !== undefined) { setParts.push('category_id = ?'); params.push(categoryId); }
+  params.push(diaryId);
+  await c.env.DB.prepare(`UPDATE diaries SET ${setParts.join(', ')} WHERE id = ?`).bind(...params).run();
   // 版本记录：仅当标题或正文有实际变化时新增版本（纯状态切换/封面操作不产生噪音版本）
   const newTitle = title ?? old.title;
   const newContent = content_md ?? old.content_md;
@@ -289,6 +311,46 @@ admin.post('/diaries/:id/cover', async (c) => {
   await c.env.DB.prepare('UPDATE diaries SET cover_filename = ? WHERE id = ?')
     .bind(key!, c.req.param('id')).run();
   return c.json({ cover_filename: key });
+});
+
+// ---- 日记分类 ----
+admin.get('/diary-categories', async (c) => {
+  const { results } = await c.env.DB.prepare(
+    `SELECT c.id, c.name, c.sort_order, COUNT(d.id) AS count
+     FROM diary_categories c LEFT JOIN diaries d ON d.category_id = c.id
+     GROUP BY c.id ORDER BY c.sort_order, c.id`
+  ).all();
+  return c.json(results);
+});
+
+admin.post('/diary-categories', async (c) => {
+  const { name, sort_order = 0 } = await c.req.json();
+  if (!name?.trim()) return c.json({ detail: '分类名必填' }, 400);
+  const dup = await c.env.DB.prepare('SELECT id FROM diary_categories WHERE name = ?').bind(name.trim()).first();
+  if (dup) return c.json({ detail: '分类已存在' }, 400);
+  const r = await c.env.DB.prepare('INSERT INTO diary_categories (name, sort_order) VALUES (?, ?)')
+    .bind(name.trim(), sort_order).run();
+  return c.json({ id: r.meta.last_row_id, name: name.trim(), sort_order, count: 0 });
+});
+
+admin.put('/diary-categories/:id', async (c) => {
+  const { name, sort_order } = await c.req.json();
+  if (name !== undefined && !String(name).trim()) return c.json({ detail: '分类名不能为空' }, 400);
+  if (name !== undefined) {
+    const dup = await c.env.DB.prepare('SELECT id FROM diary_categories WHERE name = ? AND id != ?')
+      .bind(String(name).trim(), c.req.param('id')).first();
+    if (dup) return c.json({ detail: '分类已存在' }, 400);
+  }
+  await c.env.DB.prepare('UPDATE diary_categories SET name = COALESCE(?, name), sort_order = COALESCE(?, sort_order) WHERE id = ?')
+    .bind(name !== undefined ? String(name).trim() : null, sort_order ?? null, c.req.param('id')).run();
+  return c.json({ ok: true });
+});
+
+admin.delete('/diary-categories/:id', async (c) => {
+  // 该分类下的日记回到未分类
+  await c.env.DB.prepare('UPDATE diaries SET category_id = NULL WHERE category_id = ?').bind(c.req.param('id')).run();
+  await c.env.DB.prepare('DELETE FROM diary_categories WHERE id = ?').bind(c.req.param('id')).run();
+  return c.json({ ok: true });
 });
 
 // ---- 音乐专辑 ----

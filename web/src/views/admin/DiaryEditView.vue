@@ -16,6 +16,8 @@ const slug = ref('');
 const content = ref('');
 const status = ref('draft');
 const coverFilename = ref('');
+const categories = ref([]); // 分类下拉选项
+const categoryId = ref(null); // 选中的分类（null = 未分类）
 
 const loading = ref(false);
 const saving = ref(false);
@@ -44,6 +46,10 @@ function fmtVersionTime(s) {
 const html = computed(() => marked.parse(content.value || ''));
 
 onMounted(async () => {
+  // 分类下拉选项（新建与编辑都需要）
+  try {
+    categories.value = await api('/admin/diary-categories', { admin: true });
+  } catch { /* 分类加载失败不阻塞编辑 */ }
   if (!isEdit.value) return;
   loading.value = true;
   error.value = '';
@@ -54,6 +60,7 @@ onMounted(async () => {
     content.value = d.content_md || '';
     status.value = d.status || 'draft';
     coverFilename.value = d.cover_filename || '';
+    categoryId.value = d.category_id || null;
     versions.value = d.versions || [];
   } catch (e) {
     error.value = e.message;
@@ -88,6 +95,7 @@ async function save(targetStatus) {
     content_md: content.value,
     slug: slug.value.trim() || null,
     status: targetStatus,
+    category_id: categoryId.value,
   };
   try {
     if (isEdit.value) {
@@ -153,6 +161,13 @@ async function uploadCover(event) {
         <label class="field">
           <span class="label">slug（留空则用文章 ID 访问）</span>
           <input v-model="slug" type="text" placeholder="如 my-first-diary" />
+        </label>
+        <label class="field">
+          <span class="label">分类</span>
+          <select v-model="categoryId">
+            <option :value="null">未分类</option>
+            <option v-for="cat in categories" :key="cat.id" :value="cat.id">{{ cat.name }}</option>
+          </select>
         </label>
         <div class="field">
           <span class="label">封面图</span>
@@ -271,14 +286,17 @@ async function uploadCover(event) {
   color: var(--color-text-light);
   margin-bottom: 6px;
 }
-.field input {
+.field input,
+.field select {
   width: 100%;
   padding: 10px 12px;
   border: 1px solid var(--color-border);
   border-radius: 8px;
   outline: none;
+  background: #fff;
 }
 .field input:focus,
+.field select:focus,
 .field textarea:focus {
   border-color: var(--color-primary);
 }

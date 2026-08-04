@@ -105,23 +105,45 @@ content.get('/albums/:id', async (c) => {
 content.get('/diaries', async (c) => {
   const page = Math.max(1, Number(c.req.query('page')) || 1);
   const size = 10;
-  const total = await c.env.DB.prepare("SELECT COUNT(*) AS n FROM diaries WHERE status = 'published'")
-    .first<{ n: number }>();
+  // 分类筛选：category 为正整数时按分类过滤，非法/空则忽略
+  const catRaw = c.req.query('category');
+  const catId = catRaw !== undefined && catRaw !== '' ? Number(catRaw) : NaN;
+  const categorySql = Number.isInteger(catId) && catId > 0 ? 'AND d.category_id = ?' : '';
+  const catArgs = categorySql ? [catId] : [];
+  const total = await c.env.DB.prepare(
+    `SELECT COUNT(*) AS n FROM diaries d WHERE d.status = 'published' ${categorySql}`
+  ).bind(...catArgs).first<{ n: number }>();
   const { results } = await c.env.DB.prepare(
     `SELECT d.id, d.title, d.slug, d.cover_filename, d.published_at, u.display_name AS author,
+            c.id AS category_id, c.name AS category_name,
             substr(d.content_md, 1, 200) AS excerpt
      FROM diaries d JOIN admin_users u ON u.id = d.author_id
-     WHERE d.status = 'published' ORDER BY d.published_at DESC LIMIT ? OFFSET ?`
-  ).bind(size, (page - 1) * size).all();
+     LEFT JOIN diary_categories c ON c.id = d.category_id
+     WHERE d.status = 'published' ${categorySql}
+     ORDER BY d.published_at DESC LIMIT ? OFFSET ?`
+  ).bind(...catArgs, size, (page - 1) * size).all();
   return c.json({ items: results, total: total?.n ?? 0 });
+});
+
+// 分类列表（供前台筛选 chips，含已发布日记数）
+content.get('/diary-categories', async (c) => {
+  const { results } = await c.env.DB.prepare(
+    `SELECT c.id, c.name, c.sort_order, COUNT(d.id) AS count
+     FROM diary_categories c
+     LEFT JOIN diaries d ON d.category_id = c.id AND d.status = 'published'
+     GROUP BY c.id ORDER BY c.sort_order, c.id`
+  ).all();
+  return c.json(results);
 });
 
 content.get('/diaries/:slugOrId', async (c) => {
   const key = c.req.param('slugOrId');
   const isId = /^\d+$/.test(key);
   const d = await c.env.DB.prepare(
-    `SELECT d.id, d.title, d.slug, d.content_md, d.cover_filename, d.published_at, u.display_name AS author
+    `SELECT d.id, d.title, d.slug, d.content_md, d.cover_filename, d.published_at, u.display_name AS author,
+            c.id AS category_id, c.name AS category_name
      FROM diaries d JOIN admin_users u ON u.id = d.author_id
+     LEFT JOIN diary_categories c ON c.id = d.category_id
      WHERE d.status = 'published' AND ${isId ? 'd.id = ?' : 'd.slug = ?'}`
   ).bind(key).first();
   if (!d) return c.json({ detail: '文章不存在' }, 404);

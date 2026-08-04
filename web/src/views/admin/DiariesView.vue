@@ -63,6 +63,7 @@ onMounted(loadDiaries);
           <tr>
             <th>标题</th>
             <th>slug</th>
+            <th>分类</th>
             <th class="col-status">状态</th>
             <th class="col-time">更新时间</th>
             <th class="col-actions">操作</th>
@@ -72,6 +73,7 @@ onMounted(loadDiaries);
           <tr v-for="diary in diaries" :key="diary.id">
             <td class="title-cell">{{ diary.title }}</td>
             <td class="slug-cell">{{ diary.slug || '—' }}</td>
+            <td class="cat-cell">{{ diary.category_name || '—' }}</td>
             <td class="col-status">
               <span class="badge" :class="diary.status === 'published' ? 'published' : 'draft'">
                 {{ diary.status === 'published' ? '已发布' : '草稿' }}
@@ -138,7 +140,8 @@ onMounted(loadDiaries);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.slug-cell {
+.slug-cell,
+.cat-cell {
   color: var(--color-text-light);
 }
 .col-status {
@@ -227,10 +230,14 @@ onMounted(loadDiaries);
   .slug-cell::before {
     content: 'slug：';
   }
+  .cat-cell::before {
+    content: '分类：';
+  }
   .col-time::before {
     content: '更新时间：';
   }
   .slug-cell,
+  .cat-cell,
   .col-time {
     font-size: 13px;
     color: var(--color-text-light);

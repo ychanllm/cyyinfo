@@ -47,7 +47,14 @@ onMounted(async () => {
           class="cover"
         />
         <h1 class="title">{{ diary.title }}</h1>
-        <p class="meta">{{ diary.author }} · {{ fmtDate(diary.published_at) }}</p>
+        <p class="meta">
+          <router-link
+            v-if="diary.category_name"
+            :to="`/diaries?category=${diary.category_id}`"
+            class="cat-badge"
+          >{{ diary.category_name }}</router-link>
+          {{ diary.author }} · {{ fmtDate(diary.published_at) }}
+        </p>
         <div class="md-body" v-html="html"></div>
       </article>
       <MessageBoard targetType="diary" :targetId="diary.id" />
@@ -95,6 +102,15 @@ onMounted(async () => {
   margin-bottom: 24px;
   padding-bottom: 16px;
   border-bottom: 1px solid var(--color-border);
+}
+.cat-badge {
+  display: inline-block;
+  background: var(--color-primary);
+  color: #fff;
+  font-size: 12px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  margin-right: 6px;
 }
 @media (max-width: 480px) {
   .article {
