@@ -214,7 +214,10 @@ admin.get('/diaries', async (c) => {
 admin.get('/diaries/:id', async (c) => {
   const d = await c.env.DB.prepare('SELECT * FROM diaries WHERE id = ?').bind(c.req.param('id')).first();
   if (!d) return c.json({ detail: '日记不存在' }, 404);
-  return c.json(d);
+  const { results: versions } = await c.env.DB.prepare(
+    'SELECT id, version, title, content_md, saved_at FROM diary_versions WHERE diary_id = ? ORDER BY version'
+  ).bind(d.id).all();
+  return c.json({ ...d, versions });
 });
 
 admin.post('/diaries', async (c) => {
@@ -229,13 +232,17 @@ admin.post('/diaries', async (c) => {
   const r = await c.env.DB.prepare(
     'INSERT INTO diaries (author_id, title, slug, content_md, status, published_at) VALUES (?, ?, ?, ?, ?, ?)'
   ).bind(adminUser.id, title, slug, content_md, status, publishedAt).run();
-  return c.json({ id: r.meta.last_row_id });
+  const diaryId = r.meta.last_row_id;
+  // 创建即第 1 次编辑
+  await c.env.DB.prepare('INSERT INTO diary_versions (diary_id, version, title, content_md) VALUES (?, 1, ?, ?)')
+    .bind(diaryId, title, content_md).run();
+  return c.json({ id: diaryId });
 });
 
 admin.put('/diaries/:id', async (c) => {
   const { title, content_md, slug, status } = await c.req.json();
   const old = await c.env.DB.prepare('SELECT * FROM diaries WHERE id = ?').bind(c.req.param('id'))
-    .first<{ status: string; published_at: string | null }>();
+    .first<{ status: string; published_at: string | null; title: string; content_md: string }>();
   if (!old) return c.json({ detail: '日记不存在' }, 404);
   if (slug) {
     const dup = await c.env.DB.prepare('SELECT id FROM diaries WHERE slug = ? AND id != ?')
@@ -245,11 +252,23 @@ admin.put('/diaries/:id', async (c) => {
   // 首次发布时记录 published_at，撤回后再发布不重置
   const publishedAt = status === 'published' && old.published_at == null
     ? new Date().toISOString() : old.published_at;
+  const diaryId = Number(c.req.param('id'));
   await c.env.DB.prepare(
     `UPDATE diaries SET title = COALESCE(?, title), content_md = COALESCE(?, content_md),
      slug = COALESCE(?, slug), status = COALESCE(?, status), published_at = ?,
      updated_at = datetime('now') WHERE id = ?`
-  ).bind(title ?? null, content_md ?? null, slug ?? null, status ?? null, publishedAt, c.req.param('id')).run();
+  ).bind(title ?? null, content_md ?? null, slug ?? null, status ?? null, publishedAt, diaryId).run();
+  // 版本记录：仅当标题或正文有实际变化时新增版本（纯状态切换/封面操作不产生噪音版本）
+  const newTitle = title ?? old.title;
+  const newContent = content_md ?? old.content_md;
+  const latest = await c.env.DB.prepare(
+    'SELECT version, title, content_md FROM diary_versions WHERE diary_id = ? ORDER BY version DESC LIMIT 1'
+  ).bind(diaryId).first<{ version: number; title: string; content_md: string }>();
+  if (!latest || latest.title !== newTitle || latest.content_md !== newContent) {
+    const nextVersion = (latest?.version ?? 0) + 1;
+    await c.env.DB.prepare('INSERT INTO diary_versions (diary_id, version, title, content_md) VALUES (?, ?, ?, ?)')
+      .bind(diaryId, nextVersion, newTitle, newContent).run();
+  }
   return c.json({ ok: true });
 });
 

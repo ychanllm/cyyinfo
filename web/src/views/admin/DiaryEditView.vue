@@ -22,6 +22,23 @@ const saving = ref(false);
 const uploading = ref(false);
 const error = ref('');
 const savedTip = ref('');
+const versions = ref([]); // 编辑版本历史（后端 diary_versions）
+const showVersionId = ref(null); // 展开查看某次版本的内容
+
+// 每个版本一个不同的颜色，一眼看出是第几次编辑
+const VERSION_COLORS = ['#e74c3c', '#e67e22', '#f1c40f', '#27ae60', '#3498db', '#9b59b6', '#e84393', '#00bcd4'];
+function versionColor(version) {
+  return VERSION_COLORS[(version - 1) % VERSION_COLORS.length];
+}
+const shownVersion = computed(() => versions.value.find((v) => v.id === showVersionId.value) || null);
+
+function fmtVersionTime(s) {
+  if (!s) return '—';
+  const d = new Date(s.endsWith('Z') || s.includes('+') ? s : `${s.replace(' ', 'T')}Z`);
+  if (Number.isNaN(d.getTime())) return s;
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
 
 // v-html 安全前提：content_md 为管理员自写的可信内容，首版不做消毒（spec 决策）。
 const html = computed(() => marked.parse(content.value || ''));
@@ -37,12 +54,22 @@ onMounted(async () => {
     content.value = d.content_md || '';
     status.value = d.status || 'draft';
     coverFilename.value = d.cover_filename || '';
+    versions.value = d.versions || [];
   } catch (e) {
     error.value = e.message;
   } finally {
     loading.value = false;
   }
 });
+
+// 保存后刷新版本历史（PUT 只返回 ok，需再拉一次详情拿最新版本）
+async function refreshVersions() {
+  if (!isEdit.value) return;
+  try {
+    const d = await api(`/admin/diaries/${diaryId.value}`, { admin: true });
+    versions.value = d.versions || [];
+  } catch { /* 刷新失败不阻塞后续保存 */ }
+}
 
 function showSaved(msg) {
   savedTip.value = msg;
@@ -67,6 +94,7 @@ async function save(targetStatus) {
       await api(`/admin/diaries/${diaryId.value}`, { method: 'PUT', admin: true, body: payload });
       status.value = targetStatus;
       showSaved(targetStatus === 'published' ? '已发布' : '草稿已保存');
+      refreshVersions();
     } else {
       const r = await api('/admin/diaries', { method: 'POST', admin: true, body: payload });
       // 新建保存后跳到编辑页，之后即可上传封面
@@ -149,6 +177,31 @@ async function uploadCover(event) {
         <div class="md-body preview-body" v-html="html"></div>
       </section>
     </div>
+
+    <section v-if="isEdit && versions.length" class="card versions-card">
+      <span class="label">编辑记录（共 {{ versions.length }} 次）</span>
+      <ul class="version-list">
+        <li
+          v-for="v in versions"
+          :key="v.id"
+          class="version-item"
+          :class="{ latest: v.version === versions.length }"
+          :style="{ '--vc': versionColor(v.version) }"
+        >
+          <span class="dot"></span>
+          <span class="v-no">第 {{ v.version }} 次</span>
+          <span class="v-time">{{ fmtVersionTime(v.saved_at) }}</span>
+          <span v-if="v.version === versions.length" class="v-tag">当前</span>
+          <button class="v-view" @click="showVersionId = showVersionId === v.id ? null : v.id">
+            {{ showVersionId === v.id ? '收起' : '查看' }}
+          </button>
+        </li>
+      </ul>
+      <div v-if="shownVersion" class="version-preview">
+        <h4 class="vp-title">{{ shownVersion.title }}</h4>
+        <div class="md-body" v-html="marked.parse(shownVersion.content_md || '')"></div>
+      </div>
+    </section>
   </div>
 </template>
 
@@ -289,6 +342,75 @@ async function uploadCover(event) {
 .btn:disabled {
   opacity: 0.6;
   cursor: default;
+}
+.versions-card {
+  margin-top: 20px;
+}
+.version-list {
+  list-style: none;
+  margin-top: 10px;
+}
+.version-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-left: 3px solid var(--vc);
+  border-radius: 4px;
+  margin-bottom: 6px;
+  background: var(--bg-deep);
+  font-size: 13px;
+}
+.version-item.latest {
+  background: #fff8e6;
+}
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--vc);
+  flex-shrink: 0;
+}
+.v-no {
+  font-weight: 600;
+  color: var(--color-text);
+}
+.v-time {
+  color: var(--color-text-light);
+}
+.v-tag {
+  margin-left: auto;
+  font-size: 12px;
+  color: #1e8e4f;
+  background: #e6f6ec;
+  padding: 1px 8px;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+.v-view {
+  border: 1px solid var(--color-border);
+  background: #fff;
+  border-radius: 6px;
+  padding: 2px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  color: var(--color-text);
+  flex-shrink: 0;
+}
+.v-view:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+.version-preview {
+  margin-top: 12px;
+  padding: 14px 16px;
+  border: 1px dashed var(--color-border);
+  border-radius: 8px;
+  background: var(--color-card);
+}
+.vp-title {
+  font-size: 16px;
+  margin-bottom: 8px;
 }
 @media (max-width: 960px) {
   .panes {

@@ -36,17 +36,6 @@ async function toggleStatus(diary) {
   }
 }
 
-async function removeDiary(diary) {
-  if (!confirm(`确定删除日记「${diary.title}」吗？`)) return;
-  error.value = '';
-  try {
-    await api(`/admin/diaries/${diary.id}`, { method: 'DELETE', admin: true });
-    await loadDiaries();
-  } catch (e) {
-    error.value = e.message;
-  }
-}
-
 function fmtTime(s) {
   if (!s) return '—';
   const d = new Date(s.endsWith('Z') || s.includes('+') ? s : `${s.replace(' ', 'T')}Z`);
@@ -94,7 +83,6 @@ onMounted(loadDiaries);
               <button class="btn" @click="toggleStatus(diary)">
                 {{ diary.status === 'published' ? '撤回' : '发布' }}
               </button>
-              <button class="btn danger" @click="removeDiary(diary)">删除</button>
             </td>
           </tr>
         </tbody>
