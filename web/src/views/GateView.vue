@@ -1,13 +1,18 @@
 <script setup>
-import { ref, computed } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
-import { api, setGuestToken } from '../api';
+import { api, setGuestToken, getAdminToken } from '../api';
 
 const router = useRouter();
 const route = useRoute();
 const passcode = ref('');
 const error = ref('');
 const loading = ref(false);
+
+// 已登录管理员不应停在访客门禁页（防御：手动输入 /gate 时自动回后台）
+onMounted(() => {
+  if (getAdminToken()) router.replace('/admin');
+});
 
 // 验证后回到原本要访问的页面，默认回首页
 const redirectTarget = computed(() => {
