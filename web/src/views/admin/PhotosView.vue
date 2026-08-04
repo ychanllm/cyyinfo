@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import { api, apiUpload } from '../../api';
 
 const albums = ref([]);
@@ -103,6 +103,32 @@ async function reloadPhotos() {
   if (!current.value) return;
   const data = await api(`/albums/${current.value.id}`, { admin: true });
   photos.value = data.photos;
+}
+
+// 可移动的目标相册（排除当前相册）
+const moveTargets = computed(() => albums.value.filter((a) => a.id !== current.value?.id));
+
+async function movePhoto(photo, targetAlbumId) {
+  const target = albums.value.find((a) => a.id === Number(targetAlbumId));
+  if (!target) return;
+  if (!confirm(`确定把这张照片移动到「${target.title}」相册吗？`)) return;
+  error.value = '';
+  try {
+    await api(`/admin/photos/${photo.id}`, {
+      method: 'PUT',
+      admin: true,
+      body: { album_id: target.id },
+    });
+    // 若移动的是当前相册封面，封面随之清空
+    if (current.value?.cover_photo_id === photo.id) {
+      current.value.cover_photo_id = null;
+      const album = albums.value.find((a) => a.id === current.value.id);
+      if (album) album.cover_photo_id = null;
+    }
+    await reloadPhotos();
+  } catch (e) {
+    error.value = e.message;
+  }
 }
 
 async function uploadPhotos(event) {
@@ -239,6 +265,10 @@ onMounted(loadAlbums);
               placeholder="照片说明"
               @change="saveCaption(photo)"
             />
+            <select class="move-select" @change="movePhoto(photo, $event.target.value)">
+              <option value="" selected disabled>移动到…</option>
+              <option v-for="a in moveTargets" :key="a.id" :value="a.id">{{ a.title }}</option>
+            </select>
             <div class="cell-actions">
               <button
                 class="btn"
@@ -429,8 +459,20 @@ onMounted(loadAlbums);
   outline: none;
   margin-bottom: 8px;
 }
-.cell-body input:focus {
+.cell-body input:focus,
+.move-select:focus {
   border-color: var(--color-primary);
+}
+.move-select {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  font-size: 13px;
+  color: var(--color-text);
+  background: #fff;
+  outline: none;
+  margin-bottom: 8px;
 }
 .cell-actions {
   display: flex;

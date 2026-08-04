@@ -191,9 +191,20 @@ admin.post('/photos', async (c) => {
 });
 
 admin.put('/photos/:id', async (c) => {
-  const { caption, sort_order, taken_at } = await c.req.json();
-  await c.env.DB.prepare('UPDATE photos SET caption = COALESCE(?, caption), sort_order = COALESCE(?, sort_order), taken_at = COALESCE(?, taken_at) WHERE id = ?')
-    .bind(caption ?? null, sort_order ?? null, taken_at ?? null, c.req.param('id')).run();
+  const { caption, sort_order, taken_at, album_id } = await c.req.json();
+  const photo = await c.env.DB.prepare('SELECT album_id FROM photos WHERE id = ?')
+    .bind(c.req.param('id')).first<{ album_id: number }>();
+  if (!photo) return c.json({ detail: '照片不存在' }, 404);
+  // 移动到其他相册：校验目标存在；若该照片是原相册封面，清空原相册封面
+  if (album_id !== undefined && album_id !== null) {
+    const target = await c.env.DB.prepare('SELECT id FROM albums WHERE id = ?').bind(album_id).first();
+    if (!target) return c.json({ detail: '目标相册不存在' }, 400);
+    await c.env.DB.prepare('UPDATE albums SET cover_photo_id = NULL WHERE id = ? AND cover_photo_id = ?')
+      .bind(photo.album_id, Number(c.req.param('id'))).run();
+  }
+  await c.env.DB.prepare(
+    'UPDATE photos SET caption = COALESCE(?, caption), sort_order = COALESCE(?, sort_order), taken_at = COALESCE(?, taken_at), album_id = COALESCE(?, album_id) WHERE id = ?'
+  ).bind(caption ?? null, sort_order ?? null, taken_at ?? null, album_id ?? null, c.req.param('id')).run();
   return c.json({ ok: true });
 });
 
