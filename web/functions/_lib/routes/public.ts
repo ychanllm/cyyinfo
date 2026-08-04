@@ -52,7 +52,7 @@ pub.post('/reminders/check', async (c) => {
 
   const smtp = {
     host: (await getSetting(c.env.DB, 'smtp_host')) || 'smtp.qq.com',
-    port: Number((await getSetting(c.env.DB, 'smtp_port')) || 587),
+    port: Number((await getSetting(c.env.DB, 'smtp_port')) || 465),
     user: await getSetting(c.env.DB, 'smtp_user'),
     pass: await getSetting(c.env.DB, 'smtp_pass'),
     from: await getSetting(c.env.DB, 'smtp_user'),

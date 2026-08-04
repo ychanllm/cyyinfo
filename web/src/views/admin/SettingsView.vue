@@ -10,7 +10,7 @@ const backgroundColor = ref('#f9e1ef');
 const heroLabel = ref('');
 const heroTitle = ref('');
 const smtpHost = ref('smtp.qq.com');
-const smtpPort = ref('587');
+const smtpPort = ref('465');
 const smtpUser = ref('');
 const smtpPass = ref('');
 const defaultRecipient = ref('');
@@ -32,7 +32,7 @@ async function loadSettings() {
     heroLabel.value = data.hero_label || '';
     heroTitle.value = data.hero_title || '';
     smtpHost.value = data.smtp_host || 'smtp.qq.com';
-    smtpPort.value = data.smtp_port || '587';
+    smtpPort.value = data.smtp_port || '465';
     smtpUser.value = data.smtp_user || '';
     smtpPass.value = data.smtp_pass || '';
     defaultRecipient.value = data.default_recipient || '';
@@ -219,7 +219,7 @@ onMounted(loadSettings);
           </label>
           <label class="field">
             SMTP 端口
-            <input v-model="smtpPort" type="text" placeholder="587" />
+            <input v-model="smtpPort" type="text" placeholder="465" />
           </label>
           <label class="field">
             发件 QQ 邮箱
