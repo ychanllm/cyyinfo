@@ -1,6 +1,6 @@
 # cyyinfo — 我们的小站
 
-情侣私密小站：相册、日记、音乐、留言、桌宠。Cloudflare 全栈部署，单 Pages 域名对外。
+小站：相册、日记、音乐、留言、桌宠。Cloudflare 全栈部署，单 Pages 域名对外。
 
 ## 架构
 
@@ -71,7 +71,7 @@ cd web && npm run build   # 前端构建验证
 
 ## 部署（已执行的真实步骤）
 
-前置：`npx wrangler login`（账号 gsonfox618@gmail.com）。
+前置：`npx wrangler login`（账号）。
 
 ```bash
 cd worker
@@ -81,7 +81,7 @@ npx wrangler d1 migrations apply cyyinfo-db --remote
 echo "<随机64位hex>" | npx wrangler secret put JWT_SECRET
 echo "admin"         | npx wrangler secret put ADMIN_USERNAME
 echo "<强随机密码>"   | npx wrangler secret put ADMIN_PASSWORD
-npm run deploy                               # → https://cyyinfo-api.gsonfox618.workers.dev
+npm run deploy                               # → 
 
 cd ../web
 # 把 functions/ 两个文件里的 WORKER 常量改为上面的真实域名
