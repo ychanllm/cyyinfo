@@ -1,7 +1,10 @@
 <script setup>
 import { ref, onMounted } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { api } from '../api';
+import { localize } from '../i18n';
 
+const { t } = useI18n();
 const albums = ref([]);
 const loading = ref(true);
 const error = ref('');
@@ -19,17 +22,17 @@ onMounted(async () => {
 
 <template>
   <div class="music">
-    <h1 class="page-title">音乐</h1>
+    <h1 class="page-title">{{ t('music.title') }}</h1>
 
-    <p v-if="loading" class="hint">加载中…</p>
+    <p v-if="loading" class="hint">{{ t('music.loading') }}</p>
     <p v-else-if="error" class="hint">{{ error }}</p>
-    <p v-else-if="!albums.length" class="hint">还没有音乐专辑，敬请期待</p>
+    <p v-else-if="!albums.length" class="hint">{{ t('music.empty') }}</p>
 
     <div v-else class="grid">
       <router-link
         v-for="a in albums"
         :key="a.id"
-        :to="`/music/${a.id}`"
+        :to="localize(`/music/${a.id}`)"
         class="card"
       >
         <div class="cover">
@@ -46,7 +49,7 @@ onMounted(async () => {
         <div class="meta">
           <h2 class="title">{{ a.title }}</h2>
           <p class="sub">
-            <span v-if="a.year">{{ a.year }} · </span>{{ a.song_count }} 首
+            <span v-if="a.year">{{ a.year }} · </span>{{ t('music.songCount', { n: a.song_count }) }}
           </p>
         </div>
       </router-link>

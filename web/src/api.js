@@ -1,3 +1,5 @@
+import { i18n } from './i18n';
+
 const GUEST_KEY = 'cyyinfo_guest_token';
 const ADMIN_KEY = 'cyyinfo_admin_token';
 
@@ -20,25 +22,31 @@ async function request(path, { method = 'GET', body, admin = false, form = null 
     headers['Content-Type'] = 'application/json';
     payload = JSON.stringify(body);
   }
-  const res = await fetch(path, { method, headers, body: payload });
+  // 公开内容接口按当前语言取本地化内容（后台接口返回中英两版，无需 lang）
+  let url = path;
+  if (!admin && method === 'GET') {
+    url += (url.includes('?') ? '&' : '?') + 'lang=' + encodeURIComponent(i18n.global.locale.value);
+  }
+  const res = await fetch(url, { method, headers, body: payload });
   const data = await res.json().catch(() => ({}));
   if (res.status === 401) {
     if (path.endsWith('/admin/login')) {
       // 登录接口 401 = 账号或密码错误：留在登录页提示，不跳转到门禁页
-      throw new Error(data.detail || '账号或密码错误');
+      throw new Error(data.detail || i18n.global.t('api.badCredentials'));
     }
+    const loc = i18n.global.locale.value;
     if (admin || getAdminToken()) {
       // 管理员会话失效：清管理员 token，回管理员登录页（已登录管理员不应被抛到访客门禁页）
       clearAdminToken();
-      if (!location.pathname.startsWith('/admin/login')) location.href = '/admin/login';
+      if (!location.pathname.startsWith(`/${loc}/admin/login`)) location.href = `/${loc}/admin/login`;
     } else {
       // 访客会话失效：回门禁页
       clearGuestToken();
-      if (!location.pathname.startsWith('/gate')) location.href = '/gate';
+      if (!location.pathname.startsWith(`/${loc}/gate`)) location.href = `/${loc}/gate`;
     }
-    throw new Error(data.detail || '未授权');
+    throw new Error(data.detail || i18n.global.t('api.unauthorized'));
   }
-  if (!res.ok) throw new Error(data.detail || `请求失败（${res.status}）`);
+  if (!res.ok) throw new Error(data.detail || i18n.global.t('api.requestFailed', { status: res.status }));
   return data;
 }
 

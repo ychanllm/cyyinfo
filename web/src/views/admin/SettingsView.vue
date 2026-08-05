@@ -1,14 +1,19 @@
 <script setup>
 import { ref, onMounted } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { api } from '../../api';
 
+const { t } = useI18n();
 const siteName = ref('');
+const siteNameEn = ref('');
 const anniversaryDate = ref('');
 const passcodeEnabled = ref(false);
 const newPasscode = ref('');
 const backgroundColor = ref('#f9e1ef');
 const heroLabel = ref('');
+const heroLabelEn = ref('');
 const heroTitle = ref('');
+const heroTitleEn = ref('');
 const smtpHost = ref('smtp.qq.com');
 const smtpPort = ref('465');
 const smtpUser = ref('');
@@ -26,11 +31,14 @@ async function loadSettings() {
   try {
     const data = await api('/admin/settings', { admin: true });
     siteName.value = data.site_name || '';
+    siteNameEn.value = data.site_name_en || '';
     anniversaryDate.value = data.anniversary_date || '';
     passcodeEnabled.value = data.passcode_enabled;
     backgroundColor.value = data.background_color || '#f9e1ef';
     heroLabel.value = data.hero_label || '';
+    heroLabelEn.value = data.hero_label_en || '';
     heroTitle.value = data.hero_title || '';
+    heroTitleEn.value = data.hero_title_en || '';
     smtpHost.value = data.smtp_host || 'smtp.qq.com';
     smtpPort.value = data.smtp_port || '465';
     smtpUser.value = data.smtp_user || '';
@@ -53,13 +61,16 @@ async function saveBasic() {
       admin: true,
       body: {
         site_name: siteName.value.trim(),
+        site_name_en: siteNameEn.value.trim(),
         anniversary_date: anniversaryDate.value,
         background_color: backgroundColor.value.trim() || '',
         hero_label: heroLabel.value.trim(),
+        hero_label_en: heroLabelEn.value.trim(),
         hero_title: heroTitle.value.trim(),
+        hero_title_en: heroTitleEn.value.trim(),
       },
     });
-    success.value = '已保存';
+    success.value = t('adminSettings.saved');
   } catch (e) {
     error.value = e.message;
   } finally {
@@ -83,7 +94,7 @@ async function saveSmtp() {
         default_recipient: defaultRecipient.value.trim(),
       },
     });
-    success.value = '邮件设置已保存';
+    success.value = t('adminSettings.smtpSaved');
   } catch (e) {
     error.value = e.message;
   } finally {
@@ -93,7 +104,7 @@ async function saveSmtp() {
 
 async function savePasscode() {
   if (!newPasscode.value) {
-    error.value = '请输入新口令';
+    error.value = t('adminSettings.passcodeRequired');
     return;
   }
   saving.value = true;
@@ -106,7 +117,7 @@ async function savePasscode() {
       body: { passcode: newPasscode.value },
     });
     newPasscode.value = '';
-    success.value = '口令已更新';
+    success.value = t('adminSettings.passcodeUpdated');
     await loadSettings();
   } catch (e) {
     error.value = e.message;
@@ -116,7 +127,7 @@ async function savePasscode() {
 }
 
 async function clearPasscode() {
-  if (!confirm('确定清除访客口令吗？清除后网站将对所有人公开。')) return;
+  if (!confirm(t('adminSettings.confirmClearPasscode'))) return;
   saving.value = true;
   error.value = '';
   success.value = '';
@@ -126,7 +137,7 @@ async function clearPasscode() {
       admin: true,
       body: { passcode: '' },
     });
-    success.value = '口令已清除';
+    success.value = t('adminSettings.passcodeCleared');
     await loadSettings();
   } catch (e) {
     error.value = e.message;
@@ -140,62 +151,74 @@ onMounted(loadSettings);
 
 <template>
   <div class="settings-view">
-    <h2 class="page-title">站点设置</h2>
+    <h2 class="page-title">{{ t('adminSettings.title') }}</h2>
     <p v-if="error" class="error">{{ error }}</p>
     <p v-if="success" class="success">{{ success }}</p>
-    <p v-if="loading" class="hint">加载中…</p>
+    <p v-if="loading" class="hint">{{ t('adminSettings.loading') }}</p>
 
     <template v-else>
       <section class="card">
-        <h3>基本设置</h3>
+        <h3>{{ t('adminSettings.basic') }}</h3>
         <form class="form" @submit.prevent="saveBasic">
           <label class="field">
-            站点名称
-            <input v-model="siteName" type="text" placeholder="站点名称" />
+            {{ t('adminSettings.siteNameZh') }}
+            <input v-model="siteName" type="text" :placeholder="t('adminSettings.siteName')" />
           </label>
           <label class="field">
-            纪念日起始日期
+            {{ t('adminSettings.siteNameEn') }}
+            <input v-model="siteNameEn" type="text" class="en-input" :placeholder="t('adminSettings.siteNameEnPh')" />
+          </label>
+          <label class="field">
+            {{ t('adminSettings.anniversary') }}
             <input v-model="anniversaryDate" type="date" />
           </label>
           <label class="field">
-            背景颜色（默认 #f9e1ef）
+            {{ t('adminSettings.bgColor') }}
             <input v-model="backgroundColor" type="color" class="color-input" />
             <input v-model="backgroundColor" type="text" placeholder="#f9e1ef" />
           </label>
           <label class="field">
-            首页标签（{date} 会替换成纪念日，留空自动生成）
-            <input v-model="heroLabel" type="text" placeholder="如：从 {date} 到现在" />
+            {{ t('adminSettings.heroLabelZh') }}
+            <input v-model="heroLabel" type="text" :placeholder="t('adminSettings.heroLabelPh')" />
           </label>
           <label class="field">
-            首页标题（{days} 会替换成天数，留空自动生成）
-            <input v-model="heroTitle" type="text" placeholder="如：我们在一起 {days} 天" />
+            {{ t('adminSettings.heroLabelEn') }}
+            <input v-model="heroLabelEn" type="text" class="en-input" :placeholder="t('adminSettings.heroLabelEnPh')" />
+          </label>
+          <label class="field">
+            {{ t('adminSettings.heroTitleZh') }}
+            <input v-model="heroTitle" type="text" :placeholder="t('adminSettings.heroTitlePh')" />
+          </label>
+          <label class="field">
+            {{ t('adminSettings.heroTitleEn') }}
+            <input v-model="heroTitleEn" type="text" class="en-input" :placeholder="t('adminSettings.heroTitleEnPh')" />
           </label>
           <button type="submit" class="submit-btn" :disabled="saving">
-            {{ saving ? '保存中…' : '保存' }}
+            {{ saving ? t('adminSettings.saving') : t('adminSettings.save') }}
           </button>
         </form>
       </section>
 
       <section class="card">
-        <h3>访客口令</h3>
+        <h3>{{ t('adminSettings.passcode') }}</h3>
         <p class="status">
-          当前状态：
+          {{ t('adminSettings.currentStatus') }}
           <span class="badge" :class="passcodeEnabled ? 'enabled' : 'disabled'">
-            {{ passcodeEnabled ? '已启用' : '未启用' }}
+            {{ passcodeEnabled ? t('adminSettings.enabled') : t('adminSettings.disabled') }}
           </span>
         </p>
         <form class="form" @submit.prevent="savePasscode">
           <label class="field">
-            新口令
+            {{ t('adminSettings.newPasscode') }}
             <input
               v-model="newPasscode"
               type="password"
-              placeholder="输入后保存即为设置/修改口令"
+              :placeholder="t('adminSettings.newPasscodePh')"
               autocomplete="new-password"
             />
           </label>
           <div class="actions">
-            <button type="submit" class="submit-btn" :disabled="saving">保存口令</button>
+            <button type="submit" class="submit-btn" :disabled="saving">{{ t('adminSettings.savePasscode') }}</button>
             <button
               v-if="passcodeEnabled"
               type="button"
@@ -203,37 +226,37 @@ onMounted(loadSettings);
               :disabled="saving"
               @click="clearPasscode"
             >
-              清除口令
+              {{ t('adminSettings.clearPasscode') }}
             </button>
           </div>
         </form>
       </section>
 
       <section class="card">
-        <h3>邮件设置（提醒事项用）</h3>
-        <p class="status">用于「提醒事项」到点自动发邮件。发件用 QQ 邮箱 SMTP：QQ邮箱 → 设置 → 账户 → 开启 SMTP 服务后获取授权码（不是登录密码）。</p>
+        <h3>{{ t('adminSettings.smtp') }}</h3>
+        <p class="status">{{ t('adminSettings.smtpHint') }}</p>
         <form class="form" @submit.prevent="saveSmtp">
           <label class="field">
-            SMTP 服务器
+            {{ t('adminSettings.smtpHost') }}
             <input v-model="smtpHost" type="text" placeholder="smtp.qq.com" />
           </label>
           <label class="field">
-            SMTP 端口
+            {{ t('adminSettings.smtpPort') }}
             <input v-model="smtpPort" type="text" placeholder="465" />
           </label>
           <label class="field">
-            发件 QQ 邮箱
+            {{ t('adminSettings.smtpUser') }}
             <input v-model="smtpUser" type="email" placeholder="xxx@qq.com" />
           </label>
           <label class="field">
-            SMTP 授权码
-            <input v-model="smtpPass" type="password" placeholder="16 位授权码" autocomplete="new-password" />
+            {{ t('adminSettings.smtpPass') }}
+            <input v-model="smtpPass" type="password" :placeholder="t('adminSettings.smtpPassPh')" autocomplete="new-password" />
           </label>
           <label class="field">
-            默认收件邮箱（提醒默认发到这里）
+            {{ t('adminSettings.defaultRecipient') }}
             <input v-model="defaultRecipient" type="email" placeholder="xxx@qq.com" />
           </label>
-          <button type="submit" class="submit-btn" :disabled="saving">{{ saving ? '保存中…' : '保存' }}</button>
+          <button type="submit" class="submit-btn" :disabled="saving">{{ saving ? t('adminSettings.saving') : t('adminSettings.save') }}</button>
         </form>
       </section>
     </template>
@@ -293,6 +316,10 @@ onMounted(loadSettings);
 }
 .field input:focus {
   border-color: var(--color-primary);
+}
+.en-input {
+  border-color: #d8cbb9 !important;
+  background: #fdfaf5;
 }
 .field .color-input {
   width: 64px;

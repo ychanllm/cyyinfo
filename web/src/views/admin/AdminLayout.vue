@@ -1,30 +1,38 @@
 <script setup>
+import { computed } from 'vue';
 import { useRouter } from 'vue-router';
+import { useI18n } from 'vue-i18n';
 import { clearAdminToken } from '../../api';
+import { localize } from '../../i18n';
+import LangSwitch from '../../components/LangSwitch.vue';
 
+const { t } = useI18n();
 const router = useRouter();
 
-const navItems = [
-  { to: '/admin/photos', label: '照片' },
-  { to: '/admin/diaries', label: '日记' },
-  { to: '/admin/diary-categories', label: '分类' },
-  { to: '/admin/music', label: '音乐' },
-  { to: '/admin/reminders', label: '提醒' },
-  { to: '/admin/messages', label: '留言' },
-  { to: '/admin/users', label: '账号' },
-  { to: '/admin/settings', label: '设置' },
-];
+const navItems = computed(() => [
+  { to: localize('/admin/photos'), label: t('admin.photos') },
+  { to: localize('/admin/diaries'), label: t('admin.diaries') },
+  { to: localize('/admin/diary-categories'), label: t('admin.categories') },
+  { to: localize('/admin/music'), label: t('admin.music') },
+  { to: localize('/admin/reminders'), label: t('admin.reminders') },
+  { to: localize('/admin/messages'), label: t('admin.messages') },
+  { to: localize('/admin/users'), label: t('admin.users') },
+  { to: localize('/admin/settings'), label: t('admin.settings') },
+]);
 
 function logout() {
   clearAdminToken();
-  router.replace('/admin/login');
+  router.replace(localize('/admin/login'));
 }
 </script>
 
 <template>
   <div class="admin">
     <aside class="sidebar">
-      <h1 class="brand">管理后台</h1>
+      <div class="side-head">
+        <h1 class="brand">{{ t('admin.brand') }}</h1>
+        <LangSwitch />
+      </div>
       <nav class="nav">
         <router-link
           v-for="item in navItems"
@@ -36,10 +44,10 @@ function logout() {
           {{ item.label }}
         </router-link>
       </nav>
-      <button class="logout" @click="logout">退出登录</button>
+      <button class="logout" @click="logout">{{ t('admin.logout') }}</button>
     </aside>
     <main class="content">
-      <router-view />
+      <router-view :key="$route.params.lang" />
     </main>
   </div>
 </template>
@@ -58,11 +66,18 @@ function logout() {
   display: flex;
   flex-direction: column;
 }
+.side-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 24px;
+  padding: 0 8px;
+}
 .brand {
   font-size: 18px;
   color: var(--color-primary);
-  margin-bottom: 24px;
-  padding: 0 8px;
+  margin: 0;
 }
 .nav {
   display: flex;

@@ -1,7 +1,10 @@
 <script setup>
 import { ref, onMounted } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { api } from '../api';
+import { localize } from '../i18n';
 
+const { t } = useI18n();
 const albums = ref([]);
 const loading = ref(true);
 const error = ref('');
@@ -19,17 +22,17 @@ onMounted(async () => {
 
 <template>
   <div class="albums">
-    <h1 class="page-title">相册</h1>
+    <h1 class="page-title">{{ t('albums.title') }}</h1>
 
-    <p v-if="loading" class="hint">加载中…</p>
+    <p v-if="loading" class="hint">{{ t('albums.loading') }}</p>
     <p v-else-if="error" class="hint">{{ error }}</p>
-    <p v-else-if="!albums.length" class="hint">还没有相册，敬请期待</p>
+    <p v-else-if="!albums.length" class="hint">{{ t('albums.empty') }}</p>
 
     <div v-else class="grid">
       <router-link
         v-for="(a, i) in albums"
         :key="a.id"
-        :to="`/albums/${a.id}`"
+        :to="localize(`/albums/${a.id}`)"
         class="polaroid card"
         :style="{ '--tilt': i % 2 ? '1.3deg' : '-1.4deg' }"
       >

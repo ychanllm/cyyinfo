@@ -1,10 +1,14 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue';
 import { useRoute } from 'vue-router';
+import { useI18n } from 'vue-i18n';
 import { marked } from 'marked';
 import { api } from '../api';
+import { localize } from '../i18n';
+import { fmtDateFull } from '../utils/date';
 import MessageBoard from '../components/MessageBoard.vue';
 
+const { t } = useI18n();
 const route = useRoute();
 
 const diary = ref(null);
@@ -13,12 +17,6 @@ const error = ref('');
 
 // v-html 安全前提：content_md 为管理员自写的可信内容，首版不做消毒（spec 决策）。
 const html = computed(() => (diary.value ? marked.parse(diary.value.content_md || '') : ''));
-
-function fmtDate(s) {
-  const d = new Date(s);
-  if (Number.isNaN(d.getTime())) return String(s || '').slice(0, 10);
-  return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`;
-}
 
 onMounted(async () => {
   try {
@@ -33,9 +31,9 @@ onMounted(async () => {
 
 <template>
   <div class="diary-detail">
-    <router-link to="/diaries" class="back">&larr; 返回日记</router-link>
+    <router-link :to="localize('/diaries')" class="back">&larr; {{ t('diaryDetail.back') }}</router-link>
 
-    <p v-if="loading" class="hint">加载中…</p>
+    <p v-if="loading" class="hint">{{ t('diaryDetail.loading') }}</p>
     <p v-else-if="error" class="hint">{{ error }}</p>
 
     <template v-else-if="diary">
@@ -50,10 +48,10 @@ onMounted(async () => {
         <p class="meta">
           <router-link
             v-if="diary.category_name"
-            :to="`/diaries?category=${diary.category_id}`"
+            :to="localize(`/diaries?category=${diary.category_id}`)"
             class="cat-badge"
           >{{ diary.category_name }}</router-link>
-          {{ diary.author }} · {{ fmtDate(diary.published_at) }}
+          {{ diary.author }} · {{ fmtDateFull(diary.published_at) }}
         </p>
         <div class="md-body" v-html="html"></div>
       </article>

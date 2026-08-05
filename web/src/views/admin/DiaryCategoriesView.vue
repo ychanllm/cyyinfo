@@ -1,18 +1,22 @@
 <script setup>
 import { ref, onMounted } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { api } from '../../api';
 
+const { t } = useI18n();
 const categories = ref([]);
 const loading = ref(true);
 const error = ref('');
 
 // 添加
 const newName = ref('');
+const newNameEn = ref('');
 const adding = ref(false);
 
 // 行内重命名
 const editingId = ref(null); // 正在编辑的分类 id
 const editName = ref('');
+const editNameEn = ref('');
 
 async function load() {
   loading.value = true;
@@ -32,8 +36,9 @@ async function add() {
   adding.value = true;
   error.value = '';
   try {
-    await api('/admin/diary-categories', { method: 'POST', admin: true, body: { name } });
+    await api('/admin/diary-categories', { method: 'POST', admin: true, body: { name, name_en: newNameEn.value.trim() } });
     newName.value = '';
+    newNameEn.value = '';
     await load();
   } catch (e) {
     error.value = e.message;
@@ -45,17 +50,18 @@ async function add() {
 function startRename(cat) {
   editingId.value = cat.id;
   editName.value = cat.name;
+  editNameEn.value = cat.name_en || '';
 }
 
 async function saveRename(cat) {
   const name = editName.value.trim();
   if (!name) {
-    error.value = '分类名不能为空';
+    error.value = t('adminCategories.nameRequired');
     return;
   }
   error.value = '';
   try {
-    await api(`/admin/diary-categories/${cat.id}`, { method: 'PUT', admin: true, body: { name } });
+    await api(`/admin/diary-categories/${cat.id}`, { method: 'PUT', admin: true, body: { name, name_en: editNameEn.value.trim() } });
     editingId.value = null;
     await load();
   } catch (e) {
@@ -64,7 +70,7 @@ async function saveRename(cat) {
 }
 
 async function remove(cat) {
-  if (!confirm(`删除分类「${cat.name}」？该分类下的 ${cat.count} 篇日记将回到未分类。`)) return;
+  if (!confirm(t('adminCategories.confirmDelete', { name: cat.name, count: cat.count }))) return;
   error.value = '';
   try {
     await api(`/admin/diary-categories/${cat.id}`, { method: 'DELETE', admin: true });
@@ -80,7 +86,7 @@ onMounted(load);
 <template>
   <div class="categories-view">
     <div class="head">
-      <h2 class="page-title">日记分类</h2>
+      <h2 class="page-title">{{ t('adminCategories.title') }}</h2>
     </div>
     <p v-if="error" class="error">{{ error }}</p>
 
@@ -88,18 +94,25 @@ onMounted(load);
       <input
         v-model="newName"
         type="text"
-        placeholder="新分类名，如「旅行」"
+        :placeholder="t('adminCategories.newNameZh')"
         class="name-input"
         @keyup.enter="add"
       />
+      <input
+        v-model="newNameEn"
+        type="text"
+        :placeholder="t('adminCategories.newNameEn')"
+        class="name-input en-input"
+        @keyup.enter="add"
+      />
       <button class="btn primary" :disabled="adding || !newName.trim()" @click="add">
-        {{ adding ? '添加中…' : '添加' }}
+        {{ adding ? t('adminCategories.adding') : t('adminCategories.add') }}
       </button>
     </div>
 
     <section class="card">
-      <p v-if="loading" class="hint">加载中…</p>
-      <p v-else-if="!categories.length" class="hint">还没有分类，在上方输入名称添加</p>
+      <p v-if="loading" class="hint">{{ t('adminCategories.loading') }}</p>
+      <p v-else-if="!categories.length" class="hint">{{ t('adminCategories.empty') }}</p>
       <ul v-else class="cat-list">
         <li v-for="cat in categories" :key="cat.id" class="cat-item">
           <template v-if="editingId === cat.id">
@@ -109,15 +122,21 @@ onMounted(load);
               class="name-input"
               @keyup.enter="saveRename(cat)"
             />
-            <button class="btn" @click="saveRename(cat)">保存</button>
-            <button class="btn" @click="editingId = null">取消</button>
+            <input
+              v-model="editNameEn"
+              type="text"
+              class="name-input en-input"
+              @keyup.enter="saveRename(cat)"
+            />
+            <button class="btn" @click="saveRename(cat)">{{ t('adminCategories.save') }}</button>
+            <button class="btn" @click="editingId = null">{{ t('adminCategories.cancel') }}</button>
           </template>
           <template v-else>
             <span class="cat-name">{{ cat.name }}</span>
-            <span class="cat-count">{{ cat.count }} 篇日记</span>
+            <span class="cat-count">{{ t('adminCategories.diaryCount', { n: cat.count }) }}</span>
             <div class="actions">
-              <button class="btn" @click="startRename(cat)">重命名</button>
-              <button class="btn danger" @click="remove(cat)">删除</button>
+              <button class="btn" @click="startRename(cat)">{{ t('adminCategories.rename') }}</button>
+              <button class="btn danger" @click="remove(cat)">{{ t('adminCategories.delete') }}</button>
             </div>
           </template>
         </li>
@@ -153,6 +172,10 @@ onMounted(load);
   border: 1px solid var(--color-border);
   border-radius: 8px;
   outline: none;
+}
+.en-input {
+  border-color: #d8cbb9 !important;
+  background: #fdfaf5;
 }
 .name-input:focus {
   border-color: var(--color-primary);

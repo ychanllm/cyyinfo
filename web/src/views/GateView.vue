@@ -1,8 +1,11 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
+import { useI18n } from 'vue-i18n';
 import { api, setGuestToken, getAdminToken } from '../api';
+import { localize } from '../i18n';
 
+const { t } = useI18n();
 const router = useRouter();
 const route = useRoute();
 const passcode = ref('');
@@ -11,19 +14,19 @@ const loading = ref(false);
 
 // 已登录管理员不应停在访客门禁页（防御：手动输入 /gate 时自动回后台）
 onMounted(() => {
-  if (getAdminToken()) router.replace('/admin');
+  if (getAdminToken()) router.replace(localize('/admin'));
 });
 
 // 验证后回到原本要访问的页面，默认回首页
 const redirectTarget = computed(() => {
   const r = route.query.redirect;
-  return typeof r === 'string' && r.startsWith('/') ? r : '/';
+  return typeof r === 'string' && r.startsWith('/') ? r : localize('/');
 });
 
 async function submit() {
   error.value = '';
   if (!passcode.value.trim()) {
-    error.value = '请输入口令';
+    error.value = t('gate.enterPasscode');
     return;
   }
   loading.value = true;
@@ -45,18 +48,18 @@ async function submit() {
 <template>
   <div class="gate">
     <form class="card" @submit.prevent="submit">
-      <h1>我们的小站</h1>
-      <p class="hint">这里珍藏着我们的回忆，请输入口令进入</p>
+      <h1>{{ t('gate.title') }}</h1>
+      <p class="hint">{{ t('gate.hint') }}</p>
       <input
         v-model="passcode"
         type="password"
-        placeholder="请输入访问口令"
+        :placeholder="t('gate.passcodePlaceholder')"
         autocomplete="off"
       />
       <p v-if="error" class="error">{{ error }}</p>
-      <button type="submit" :disabled="loading">{{ loading ? '验证中…' : '进入小站' }}</button>
+      <button type="submit" :disabled="loading">{{ loading ? t('gate.verifying') : t('gate.submit') }}</button>
     </form>
-    <router-link to="/admin/login" class="admin-link">管理员入口</router-link>
+    <router-link :to="localize('/admin/login')" class="admin-link">{{ t('gate.adminLink') }}</router-link>
   </div>
 </template>
 

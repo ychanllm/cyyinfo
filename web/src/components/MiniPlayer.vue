@@ -1,7 +1,9 @@
 <script setup>
 import { computed } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { state, toggle, next, prev, seek, setVolume } from '../player';
 
+const { t } = useI18n();
 const current = computed(() => state.queue[state.index]);
 
 function fmt(sec) {
@@ -21,11 +23,11 @@ function fmt(sec) {
       </div>
 
       <div class="controls">
-        <button type="button" class="btn" title="上一首" @click="prev">⏮</button>
-        <button type="button" class="btn play" :title="state.playing ? '暂停' : '播放'" @click="toggle">
+        <button type="button" class="btn" :title="t('player.prev')" @click="prev">⏮</button>
+        <button type="button" class="btn play" :title="state.playing ? t('player.pause') : t('player.play')" @click="toggle">
           {{ state.playing ? '⏸' : '▶' }}
         </button>
-        <button type="button" class="btn" title="下一首" @click="next">⏭</button>
+        <button type="button" class="btn" :title="t('player.next')" @click="next">⏭</button>
       </div>
 
       <div class="progress">

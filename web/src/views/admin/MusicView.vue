@@ -1,7 +1,9 @@
 <script setup>
 import { ref, onMounted } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { api, apiUpload } from '../../api';
 
+const { t } = useI18n();
 const albums = ref([]);
 const loading = ref(true);
 const error = ref('');
@@ -14,6 +16,7 @@ const songsLoading = ref(false);
 // 上传歌曲表单
 const songFile = ref(null);
 const songTitle = ref('');
+const songTitleEn = ref('');
 const songTrackNo = ref(0);
 const uploading = ref(false);
 
@@ -37,6 +40,7 @@ async function saveAlbum(album) {
       admin: true,
       body: {
         title: album.title.trim(),
+        title_en: album.title_en || '',
         year: Number(album.year) || null,
         sort_order: Number(album.sort_order) || 0,
       },
@@ -72,7 +76,7 @@ async function toggleAlbum(album) {
   songsLoading.value = true;
   error.value = '';
   try {
-    const data = await api(`/music/albums/${album.id}`, { admin: true });
+    const data = await api(`/admin/music/albums/${album.id}`, { admin: true });
     songs.value = data.songs;
   } catch (e) {
     error.value = e.message;
@@ -83,7 +87,7 @@ async function toggleAlbum(album) {
 
 async function reloadSongs() {
   if (!current.value) return;
-  const data = await api(`/music/albums/${current.value.id}`, { admin: true });
+  const data = await api(`/admin/music/albums/${current.value.id}`, { admin: true });
   songs.value = data.songs;
 }
 
@@ -93,11 +97,11 @@ function pickSong(event) {
 
 async function uploadSong() {
   if (!songFile.value) {
-    error.value = '请选择音频文件';
+    error.value = t('adminMusic.chooseFile');
     return;
   }
   if (!songTitle.value.trim()) {
-    error.value = '请输入歌名';
+    error.value = t('adminMusic.songTitleRequired');
     return;
   }
   uploading.value = true;
@@ -107,10 +111,12 @@ async function uploadSong() {
     form.append('file', songFile.value);
     form.append('album_id', current.value.id);
     form.append('title', songTitle.value.trim());
+    form.append('title_en', songTitleEn.value.trim());
     form.append('track_no', String(Number(songTrackNo.value) || 0));
     await apiUpload('/admin/music/songs', form);
     songFile.value = null;
     songTitle.value = '';
+    songTitleEn.value = '';
     songTrackNo.value = 0;
     document.getElementById('song-file-input').value = '';
     await reloadSongs();
@@ -127,7 +133,7 @@ async function saveSong(song) {
     await api(`/admin/music/songs/${song.id}`, {
       method: 'PUT',
       admin: true,
-      body: { title: song.title.trim(), track_no: Number(song.track_no) || 0 },
+      body: { title: song.title.trim(), title_en: song.title_en || '', track_no: Number(song.track_no) || 0 },
     });
     await reloadSongs();
   } catch (e) {
@@ -136,7 +142,7 @@ async function saveSong(song) {
 }
 
 async function removeSong(song) {
-  if (!confirm(`确定删除歌曲「${song.title}」吗？`)) return;
+  if (!confirm(t('adminMusic.confirmDeleteSong', { title: song.title }))) return;
   error.value = '';
   try {
     await api(`/admin/music/songs/${song.id}`, { method: 'DELETE', admin: true });
@@ -151,12 +157,12 @@ onMounted(loadAlbums);
 
 <template>
   <div class="music-view">
-    <h2 class="page-title">音乐管理</h2>
+    <h2 class="page-title">{{ t('adminMusic.title') }}</h2>
     <p v-if="error" class="error">{{ error }}</p>
 
     <section class="card">
-      <h3>专辑列表</h3>
-      <p v-if="loading" class="hint">加载中…</p>
+      <h3>{{ t('adminMusic.albumList') }}</h3>
+      <p v-if="loading" class="hint">{{ t('adminMusic.loading') }}</p>
       <div v-else class="album-grid">
         <div
           v-for="album in albums"
@@ -170,30 +176,34 @@ onMounted(loadAlbums);
             :alt="album.title"
             class="cover"
           />
-          <div v-else class="cover placeholder">暂无封面</div>
+          <div v-else class="cover placeholder">{{ t('adminMusic.noCover') }}</div>
           <div class="album-body">
             <label class="field">
-              名称
+              {{ t('adminMusic.nameZh') }}
               <input v-model="album.title" type="text" />
+            </label>
+            <label class="field">
+              {{ t('adminMusic.nameEn') }}
+              <input v-model="album.title_en" type="text" class="en-input" />
             </label>
             <div class="field-row">
               <label class="field">
-                年份
+                {{ t('adminMusic.year') }}
                 <input v-model="album.year" type="number" />
               </label>
               <label class="field">
-                排序
+                {{ t('adminMusic.sort') }}
                 <input v-model="album.sort_order" type="number" />
               </label>
             </div>
             <div class="album-actions">
-              <button class="btn" @click="saveAlbum(album)">保存</button>
+              <button class="btn" @click="saveAlbum(album)">{{ t('adminMusic.save') }}</button>
               <label class="btn upload-btn">
-                上传封面
+                {{ t('adminMusic.uploadCover') }}
                 <input type="file" accept="image/*" class="file-input" @change="uploadCover(album, $event)" />
               </label>
               <button class="btn primary" @click="toggleAlbum(album)">
-                {{ current?.id === album.id ? '收起' : '管理歌曲' }}
+                {{ current?.id === album.id ? t('adminMusic.collapse') : t('adminMusic.manageSongs') }}
               </button>
             </div>
           </div>
@@ -202,7 +212,7 @@ onMounted(loadAlbums);
     </section>
 
     <section v-if="current" class="card">
-      <h3>「{{ current.title }}」的歌曲</h3>
+      <h3>{{ t('adminMusic.albumSongs', { title: current.title }) }}</h3>
       <form class="upload-form" @submit.prevent="uploadSong">
         <input
           id="song-file-input"
@@ -210,28 +220,32 @@ onMounted(loadAlbums);
           accept="audio/mpeg,audio/mp4"
           @change="pickSong"
         />
-        <input v-model="songTitle" type="text" placeholder="歌名" />
-        <input v-model="songTrackNo" type="number" placeholder="曲目号" class="track-input" />
-        <button type="submit" :disabled="uploading">{{ uploading ? '上传中…' : '上传歌曲' }}</button>
+        <input v-model="songTitle" type="text" :placeholder="t('adminMusic.songTitleZh')" />
+        <input v-model="songTitleEn" type="text" :placeholder="t('adminMusic.songTitleEn')" class="en-input" />
+        <input v-model="songTrackNo" type="number" :placeholder="t('adminMusic.trackNo')" class="track-input" />
+        <button type="submit" :disabled="uploading">{{ uploading ? t('adminMusic.uploading') : t('adminMusic.uploadSong') }}</button>
       </form>
 
-      <p v-if="songsLoading" class="hint">加载中…</p>
-      <p v-else-if="!songs.length" class="hint">这张专辑还没有歌曲</p>
+      <p v-if="songsLoading" class="hint">{{ t('adminMusic.loading') }}</p>
+      <p v-else-if="!songs.length" class="hint">{{ t('adminMusic.noSongs') }}</p>
       <table v-else class="song-table">
         <thead>
           <tr>
-            <th class="col-track">曲目号</th>
-            <th>歌名</th>
-            <th class="col-actions">操作</th>
+            <th class="col-track">{{ t('adminMusic.trackNo') }}</th>
+            <th>{{ t('adminMusic.songTitle') }}</th>
+            <th class="col-actions">{{ t('adminMusic.actions') }}</th>
           </tr>
         </thead>
         <tbody>
           <tr v-for="song in songs" :key="song.id">
             <td class="col-track"><input v-model="song.track_no" type="number" /></td>
-            <td><input v-model="song.title" type="text" /></td>
+            <td>
+              <input v-model="song.title" type="text" :placeholder="t('adminMusic.zh')" />
+              <input v-model="song.title_en" type="text" :placeholder="t('adminMusic.en')" class="en-input song-en" />
+            </td>
             <td class="col-actions">
-              <button class="btn" @click="saveSong(song)">保存</button>
-              <button class="btn danger" @click="removeSong(song)">删除</button>
+              <button class="btn" @click="saveSong(song)">{{ t('adminMusic.save') }}</button>
+              <button class="btn danger" @click="removeSong(song)">{{ t('adminMusic.delete') }}</button>
             </td>
           </tr>
         </tbody>
@@ -319,6 +333,13 @@ onMounted(loadAlbums);
 }
 .field input:focus {
   border-color: var(--color-primary);
+}
+.en-input {
+  border-color: #d8cbb9 !important;
+  background: #fdfaf5;
+}
+.song-en {
+  margin-top: 4px;
 }
 .field-row {
   display: flex;

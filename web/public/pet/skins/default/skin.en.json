@@ -1,0 +1,36 @@
+{
+  "name": "Badminton Girl",
+  "cell": { "w": 192, "h": 208 },
+  "image": "spritesheet.webp",
+  "defaultAction": "idle",
+  "behaviors": {
+    "greet": "waving",
+    "remind": "waving",
+    "focusStart": "waving",
+    "focusDone": "jumping",
+    "focusFail": "failed",
+    "breakEnd": "waving",
+    "focusBase": "review",
+    "ambient": ["idle", "idle", "waiting", "review"]
+  },
+  "actions": {
+    "idle":          { "row": 0, "durs": [280, 110, 110, 140, 140, 320], "loop": true, "label": "Idle" },
+    "running-right": { "row": 1, "durs": [120, 120, 120, 120, 120, 120, 120, 220], "loop": true, "label": "Run right" },
+    "running-left":  { "row": 2, "durs": [120, 120, 120, 120, 120, 120, 120, 220], "loop": true, "label": "Run left" },
+    "waving":        { "row": 3, "durs": [140, 140, 140, 280], "label": "Wave" },
+    "jumping":       { "row": 4, "durs": [140, 140, 140, 140, 280], "label": "Jump" },
+    "failed":        { "row": 5, "durs": [140, 140, 140, 140, 140, 140, 140, 240], "label": "Fail" },
+    "waiting":       { "row": 6, "durs": [150, 150, 150, 150, 150, 260], "loop": true, "label": "Wait" },
+    "running":       { "row": 7, "durs": [120, 120, 120, 120, 120, 220], "label": "Run" },
+    "review":        { "row": 8, "durs": [150, 150, 150, 150, 150, 280], "loop": true, "label": "Review" },
+    "angry":         { "row": 9, "durs": [120, 120, 120, 120, 120, 260], "label": "Pout", "lines": ["Oops!"] }
+  },
+  "events": {
+    "idle": ["Keep going today! 🦆", "How about a game of badminton?", "I'm watching you work closely~", "The code is flowing nicely!", "Smash!", "A little slacking off is fine too…", "Remember to move if you've been sitting long"],
+    "sit": ["Let's get up and move~", "Sitting too long is bad — walk a bit?", "Follow me: str——etch——"],
+    "water": ["Drink some water before continuing?", "Hydration time!"],
+    "focusStart": ["Focus mode — I'm watching you", "Come on, win this game!"],
+    "focusDone": ["Done! Great shot!", "Awesome, take a break~"],
+    "focusFail": ["Aww… you'll get it next time", "No worries, try again"]
+  }
+}

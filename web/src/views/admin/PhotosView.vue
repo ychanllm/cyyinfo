@@ -1,14 +1,18 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { api, apiUpload } from '../../api';
 
+const { t } = useI18n();
 const albums = ref([]);
 const loading = ref(true);
 const error = ref('');
 
 // 新建相册表单
 const newTitle = ref('');
+const newTitleEn = ref('');
 const newDesc = ref('');
+const newDescEn = ref('');
 const creating = ref(false);
 
 // 当前选中的相册及其照片
@@ -31,7 +35,7 @@ async function loadAlbums() {
 
 async function createAlbum() {
   if (!newTitle.value.trim()) {
-    error.value = '请输入相册名称';
+    error.value = t('adminPhotos.nameRequired');
     return;
   }
   creating.value = true;
@@ -40,10 +44,17 @@ async function createAlbum() {
     await api('/admin/albums', {
       method: 'POST',
       admin: true,
-      body: { title: newTitle.value.trim(), description: newDesc.value.trim() },
+      body: {
+        title: newTitle.value.trim(),
+        title_en: newTitleEn.value.trim(),
+        description: newDesc.value.trim(),
+        description_en: newDescEn.value.trim(),
+      },
     });
     newTitle.value = '';
+    newTitleEn.value = '';
     newDesc.value = '';
+    newDescEn.value = '';
     await loadAlbums();
   } catch (e) {
     error.value = e.message;
@@ -60,7 +71,9 @@ async function saveAlbum(album) {
       admin: true,
       body: {
         title: album.title.trim(),
+        title_en: album.title_en || '',
         description: album.description || '',
+        description_en: album.description_en || '',
         sort_order: Number(album.sort_order) || 0,
       },
     });
@@ -71,7 +84,7 @@ async function saveAlbum(album) {
 }
 
 async function removeAlbum(album) {
-  if (!confirm(`确定删除相册「${album.title}」吗？里面的照片也会一起删除。`)) return;
+  if (!confirm(t('adminPhotos.confirmDeleteAlbum', { title: album.title }))) return;
   error.value = '';
   try {
     await api(`/admin/albums/${album.id}`, { method: 'DELETE', admin: true });
@@ -90,7 +103,7 @@ async function selectAlbum(album) {
   photosLoading.value = true;
   error.value = '';
   try {
-    const data = await api(`/albums/${album.id}`, { admin: true });
+    const data = await api(`/admin/albums/${album.id}`, { admin: true });
     photos.value = data.photos;
   } catch (e) {
     error.value = e.message;
@@ -101,7 +114,7 @@ async function selectAlbum(album) {
 
 async function reloadPhotos() {
   if (!current.value) return;
-  const data = await api(`/albums/${current.value.id}`, { admin: true });
+  const data = await api(`/admin/albums/${current.value.id}`, { admin: true });
   photos.value = data.photos;
 }
 
@@ -111,7 +124,7 @@ const moveTargets = computed(() => albums.value.filter((a) => a.id !== current.v
 async function movePhoto(photo, targetAlbumId) {
   const target = albums.value.find((a) => a.id === Number(targetAlbumId));
   if (!target) return;
-  if (!confirm(`确定把这张照片移动到「${target.title}」相册吗？`)) return;
+  if (!confirm(t('adminPhotos.confirmMovePhoto', { title: target.title }))) return;
   error.value = '';
   try {
     await api(`/admin/photos/${photo.id}`, {
@@ -143,6 +156,7 @@ async function uploadPhotos(event) {
       form.append('file', file);
       form.append('album_id', current.value.id);
       form.append('caption', '');
+      form.append('caption_en', '');
       await apiUpload('/admin/photos', form);
     }
     await reloadPhotos();
@@ -167,7 +181,10 @@ async function saveCaption(photo, e) {
     await api(`/admin/photos/${photo.id}`, {
       method: 'PUT',
       admin: true,
-      body: { caption: photo.caption || '' },
+      body: {
+        caption: photo.caption || '',
+        caption_en: photo.caption_en || '',
+      },
     });
     savedId.value = photo.id;
     if (feedbackTimer) clearTimeout(feedbackTimer);
@@ -203,7 +220,7 @@ async function setCover(photo) {
 }
 
 async function removePhoto(photo) {
-  if (!confirm('确定删除这张照片吗？')) return;
+  if (!confirm(t('adminPhotos.confirmDeletePhoto'))) return;
   error.value = '';
   try {
     await api(`/admin/photos/${photo.id}`, { method: 'DELETE', admin: true });
@@ -218,40 +235,48 @@ onMounted(loadAlbums);
 
 <template>
   <div class="photos-view">
-    <h2 class="page-title">照片管理</h2>
+    <h2 class="page-title">{{ t('adminPhotos.title') }}</h2>
     <p v-if="error" class="error">{{ error }}</p>
 
     <section class="card">
-      <h3>新建相册</h3>
+      <h3>{{ t('adminPhotos.createAlbum') }}</h3>
       <form class="create-form" @submit.prevent="createAlbum">
-        <input v-model="newTitle" type="text" placeholder="相册名称" />
-        <input v-model="newDesc" type="text" placeholder="描述（可选）" />
-        <button type="submit" :disabled="creating">{{ creating ? '创建中…' : '创建' }}</button>
+        <input v-model="newTitle" type="text" :placeholder="t('adminPhotos.albumName')" />
+        <input v-model="newTitleEn" type="text" :placeholder="t('adminPhotos.albumNameEn')" class="en-input" />
+        <input v-model="newDesc" type="text" :placeholder="t('adminPhotos.descOptional')" />
+        <input v-model="newDescEn" type="text" :placeholder="t('adminPhotos.descOptionalEn')" class="en-input" />
+        <button type="submit" :disabled="creating">{{ creating ? t('adminPhotos.creating') : t('adminPhotos.create') }}</button>
       </form>
     </section>
 
     <section class="card">
-      <h3>相册列表</h3>
-      <p v-if="loading" class="hint">加载中…</p>
-      <p v-else-if="!albums.length" class="hint">还没有相册，先创建一个吧</p>
+      <h3>{{ t('adminPhotos.albumList') }}</h3>
+      <p v-if="loading" class="hint">{{ t('adminPhotos.loading') }}</p>
+      <p v-else-if="!albums.length" class="hint">{{ t('adminPhotos.noAlbums') }}</p>
       <table v-else class="album-table">
         <thead>
           <tr>
-            <th>名称</th>
-            <th>描述</th>
-            <th class="col-sort">排序</th>
-            <th class="col-actions">操作</th>
+            <th>{{ t('adminPhotos.name') }}</th>
+            <th>{{ t('adminPhotos.desc') }}</th>
+            <th class="col-sort">{{ t('adminPhotos.sort') }}</th>
+            <th class="col-actions">{{ t('adminPhotos.actions') }}</th>
           </tr>
         </thead>
         <tbody>
           <tr v-for="album in albums" :key="album.id" :class="{ selected: current?.id === album.id }">
-            <td><input v-model="album.title" type="text" /></td>
-            <td><input v-model="album.description" type="text" placeholder="（无）" /></td>
+            <td class="bi">
+              <input v-model="album.title" type="text" :placeholder="t('adminPhotos.zh')" />
+              <input v-model="album.title_en" type="text" :placeholder="t('adminPhotos.en')" class="en-input" />
+            </td>
+            <td class="bi">
+              <input v-model="album.description" type="text" :placeholder="t('adminPhotos.none')" />
+              <input v-model="album.description_en" type="text" :placeholder="t('adminPhotos.en')" class="en-input" />
+            </td>
             <td class="col-sort"><input v-model="album.sort_order" type="number" /></td>
             <td class="col-actions">
-              <button class="btn" @click="saveAlbum(album)">保存</button>
-              <button class="btn primary" @click="selectAlbum(album)">管理照片</button>
-              <button class="btn danger" @click="removeAlbum(album)">删除</button>
+              <button class="btn" @click="saveAlbum(album)">{{ t('adminPhotos.save') }}</button>
+              <button class="btn primary" @click="selectAlbum(album)">{{ t('adminPhotos.managePhotos') }}</button>
+              <button class="btn danger" @click="removeAlbum(album)">{{ t('adminPhotos.delete') }}</button>
             </td>
           </tr>
         </tbody>
@@ -260,9 +285,9 @@ onMounted(loadAlbums);
 
     <section v-if="current" class="card">
       <div class="photo-head">
-        <h3>「{{ current.title }}」的照片</h3>
+        <h3>{{ t('adminPhotos.albumPhotos', { title: current.title }) }}</h3>
         <label class="btn primary upload-btn">
-          {{ uploading ? '上传中…' : '上传照片' }}
+          {{ uploading ? t('adminPhotos.uploading') : t('adminPhotos.upload') }}
           <input
             type="file"
             multiple
@@ -273,8 +298,8 @@ onMounted(loadAlbums);
           />
         </label>
       </div>
-      <p v-if="photosLoading" class="hint">加载中…</p>
-      <p v-else-if="!photos.length" class="hint">这个相册还没有照片</p>
+      <p v-if="photosLoading" class="hint">{{ t('adminPhotos.loading') }}</p>
+      <p v-else-if="!photos.length" class="hint">{{ t('adminPhotos.noPhotos') }}</p>
       <div v-else class="grid">
         <div v-for="photo in photos" :key="photo.id" class="cell">
           <img :src="`/uploads/${photo.filename}`" :alt="photo.caption || ''" class="img" loading="lazy" />
@@ -283,7 +308,16 @@ onMounted(loadAlbums);
               <input
                 v-model="photo.caption"
                 type="text"
-                placeholder="照片说明"
+                :placeholder="t('adminPhotos.zh')"
+                @input="onCaptionInput(photo, $event)"
+                @keyup.enter="saveCaption(photo, $event)"
+                @change="saveCaption(photo, $event)"
+              />
+              <input
+                v-model="photo.caption_en"
+                type="text"
+                :placeholder="t('adminPhotos.en')"
+                class="en-input"
                 @input="onCaptionInput(photo, $event)"
                 @keyup.enter="saveCaption(photo, $event)"
                 @change="saveCaption(photo, $event)"
@@ -292,11 +326,11 @@ onMounted(loadAlbums);
                 class="save-hint"
                 :class="{ saving: savingId === photo.id, saved: savedId === photo.id }"
               >
-                {{ savingId === photo.id ? '保存中…' : (savedId === photo.id ? '已保存' : '') }}
+                {{ savingId === photo.id ? t('adminPhotos.saving') : (savedId === photo.id ? t('adminPhotos.saved') : '') }}
               </span>
             </div>
             <select class="move-select" @change="movePhoto(photo, $event.target.value)">
-              <option value="" selected disabled>移动到…</option>
+              <option value="" selected disabled>{{ t('adminPhotos.moveTo') }}</option>
               <option v-for="a in moveTargets" :key="a.id" :value="a.id">{{ a.title }}</option>
             </select>
             <div class="cell-actions">
@@ -305,9 +339,9 @@ onMounted(loadAlbums);
                 :class="{ primary: current.cover_photo_id === photo.id }"
                 @click="setCover(photo)"
               >
-                {{ current.cover_photo_id === photo.id ? '当前封面' : '设为封面' }}
+                {{ current.cover_photo_id === photo.id ? t('adminPhotos.currentCover') : t('adminPhotos.setCover') }}
               </button>
-              <button class="btn danger" @click="removePhoto(photo)">删除</button>
+              <button class="btn danger" @click="removePhoto(photo)">{{ t('adminPhotos.delete') }}</button>
             </div>
           </div>
         </div>
@@ -353,6 +387,10 @@ onMounted(loadAlbums);
 .create-form input:focus {
   border-color: var(--color-primary);
 }
+.en-input {
+  border-color: #d8cbb9 !important;
+  background: #fdfaf5;
+}
 .hint {
   color: var(--color-text-light);
   font-size: 14px;
@@ -372,9 +410,15 @@ onMounted(loadAlbums);
 .album-table td {
   padding: 6px 8px;
   border-bottom: 1px solid var(--color-border);
+  vertical-align: top;
 }
 .album-table tr.selected td {
   background: var(--bg-deep);
+}
+.album-table .bi {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 .album-table input {
   width: 100%;
@@ -392,7 +436,7 @@ onMounted(loadAlbums);
   width: 80px;
 }
 .col-actions {
-  width: 220px;
+  width: 260px;
   white-space: nowrap;
 }
 .btn {
@@ -491,18 +535,26 @@ onMounted(loadAlbums);
 }
 .caption-row {
   display: flex;
-  align-items: center;
-  gap: 6px;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 8px;
+  position: relative;
 }
 .caption-row input {
-  flex: 1;
   margin-bottom: 0;
 }
+.caption-row .en-input {
+  border-color: #d8cbb9;
+  background: #fdfaf5;
+}
 .save-hint {
-  flex-shrink: 0;
+  position: absolute;
+  right: 8px;
+  top: 2px;
   font-size: 12px;
   color: var(--color-text-light);
   white-space: nowrap;
+  pointer-events: none;
 }
 .save-hint.saved {
   color: #27ae60;

@@ -1,9 +1,12 @@
 <script setup>
 import { ref, onMounted } from 'vue';
 import { useRoute } from 'vue-router';
+import { useI18n } from 'vue-i18n';
 import { api } from '../api';
+import { localize } from '../i18n';
 import { state, playQueue } from '../player';
 
+const { t } = useI18n();
 const route = useRoute();
 const album = ref(null);
 const loading = ref(true);
@@ -39,9 +42,9 @@ function fmt(sec) {
 
 <template>
   <div class="album-detail">
-    <router-link to="/music" class="back">&larr; 返回音乐</router-link>
+    <router-link :to="localize('/music')" class="back">&larr; {{ t('musicAlbum.back') }}</router-link>
 
-    <p v-if="loading" class="hint">加载中…</p>
+    <p v-if="loading" class="hint">{{ t('musicAlbum.loading') }}</p>
     <p v-else-if="error" class="hint">{{ error }}</p>
 
     <template v-else-if="album">
@@ -60,11 +63,11 @@ function fmt(sec) {
         <div class="info">
           <h1 class="title">{{ album.title }}</h1>
           <p v-if="album.year" class="year">{{ album.year }}</p>
-          <p class="count">共 {{ album.songs.length }} 首</p>
+          <p class="count">{{ t('musicAlbum.totalSongs', { n: album.songs.length }) }}</p>
         </div>
       </div>
 
-      <p v-if="!album.songs.length" class="hint">这张专辑还没有歌曲</p>
+      <p v-if="!album.songs.length" class="hint">{{ t('musicAlbum.noSongs') }}</p>
 
       <ul v-else class="songs">
         <li
@@ -79,7 +82,7 @@ function fmt(sec) {
           <button
             type="button"
             class="play-btn"
-            :title="isCurrent(s) && state.playing ? '正在播放' : '播放'"
+            :title="isCurrent(s) && state.playing ? t('musicAlbum.playing') : t('musicAlbum.play')"
             @click="playAt(i)"
           >
             {{ isCurrent(s) && state.playing ? '♪' : '▶' }}

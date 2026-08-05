@@ -1,7 +1,9 @@
 <script setup>
 import { ref, onMounted } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { api } from '../../api';
 
+const { t } = useI18n();
 const tab = ref('pending'); // pending | all
 const messages = ref([]);
 const loading = ref(true);
@@ -37,7 +39,7 @@ async function approve(msg) {
 }
 
 async function remove(msg) {
-  if (!confirm(`确定删除「${msg.nickname}」的这条留言吗？`)) return;
+  if (!confirm(t('adminMessages.confirmDelete', { nickname: msg.nickname }))) return;
   error.value = '';
   try {
     await api(`/admin/messages/${msg.id}`, { method: 'DELETE', admin: true });
@@ -48,9 +50,9 @@ async function remove(msg) {
 }
 
 function targetLabel(msg) {
-  if (msg.target_type === 'diary') return `日记 #${msg.target_id}`;
-  if (msg.target_type === 'photo') return `照片 #${msg.target_id}`;
-  return '全站';
+  if (msg.target_type === 'diary') return t('adminMessages.targetDiary', { id: msg.target_id });
+  if (msg.target_type === 'photo') return t('adminMessages.targetPhoto', { id: msg.target_id });
+  return t('adminMessages.targetSite');
 }
 
 function fmtTime(s) {
@@ -66,32 +68,32 @@ onMounted(loadMessages);
 
 <template>
   <div class="messages-view">
-    <h2 class="page-title">留言审核</h2>
+    <h2 class="page-title">{{ t('adminMessages.title') }}</h2>
     <p v-if="error" class="error">{{ error }}</p>
 
     <section class="card">
       <div class="tabs">
         <button class="tab" :class="{ active: tab === 'pending' }" @click="switchTab('pending')">
-          待审核
+          {{ t('adminMessages.pending') }}
         </button>
         <button class="tab" :class="{ active: tab === 'all' }" @click="switchTab('all')">
-          全部
+          {{ t('adminMessages.all') }}
         </button>
       </div>
 
-      <p v-if="loading" class="hint">加载中…</p>
+      <p v-if="loading" class="hint">{{ t('adminMessages.loading') }}</p>
       <p v-else-if="!messages.length" class="hint">
-        {{ tab === 'pending' ? '没有待审核的留言' : '还没有留言' }}
+        {{ tab === 'pending' ? t('adminMessages.noPending') : t('adminMessages.noMessages') }}
       </p>
       <table v-else class="message-table">
         <thead>
           <tr>
-            <th class="col-nick">昵称</th>
-            <th>内容</th>
-            <th class="col-target">目标</th>
-            <th v-if="tab === 'all'" class="col-status">状态</th>
-            <th class="col-time">时间</th>
-            <th class="col-actions">操作</th>
+            <th class="col-nick">{{ t('adminMessages.nick') }}</th>
+            <th>{{ t('adminMessages.content') }}</th>
+            <th class="col-target">{{ t('adminMessages.target') }}</th>
+            <th v-if="tab === 'all'" class="col-status">{{ t('adminMessages.status') }}</th>
+            <th class="col-time">{{ t('adminMessages.time') }}</th>
+            <th class="col-actions">{{ t('adminMessages.actions') }}</th>
           </tr>
         </thead>
         <tbody>
@@ -101,13 +103,13 @@ onMounted(loadMessages);
             <td class="col-target">{{ targetLabel(msg) }}</td>
             <td v-if="tab === 'all'" class="col-status">
               <span class="badge" :class="msg.is_approved ? 'approved' : 'pending'">
-                {{ msg.is_approved ? '已通过' : '待审核' }}
+                {{ msg.is_approved ? t('adminMessages.approved') : t('adminMessages.pending') }}
               </span>
             </td>
             <td class="col-time">{{ fmtTime(msg.created_at) }}</td>
             <td class="col-actions">
-              <button v-if="!msg.is_approved" class="btn primary" @click="approve(msg)">批准</button>
-              <button class="btn danger" @click="remove(msg)">删除</button>
+              <button v-if="!msg.is_approved" class="btn primary" @click="approve(msg)">{{ t('adminMessages.approve') }}</button>
+              <button class="btn danger" @click="remove(msg)">{{ t('adminMessages.delete') }}</button>
             </td>
           </tr>
         </tbody>

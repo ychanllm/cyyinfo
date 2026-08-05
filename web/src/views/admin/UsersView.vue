@@ -1,7 +1,9 @@
 <script setup>
 import { ref, onMounted } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { api } from '../../api';
 
+const { t } = useI18n();
 const users = ref([]);
 const loading = ref(true);
 const error = ref('');
@@ -26,7 +28,7 @@ async function loadUsers() {
 
 async function createUser() {
   if (!newUsername.value.trim() || !newPassword.value) {
-    error.value = '请输入用户名和密码';
+    error.value = t('adminUsers.required');
     return;
   }
   creating.value = true;
@@ -66,7 +68,7 @@ async function saveUser(user) {
 }
 
 async function removeUser(user) {
-  if (!confirm(`确定删除账号「${user.username}」吗？`)) return;
+  if (!confirm(t('adminUsers.confirmDelete', { username: user.username }))) return;
   error.value = '';
   try {
     await api(`/admin/users/${user.id}`, { method: 'DELETE', admin: true });
@@ -89,41 +91,41 @@ onMounted(loadUsers);
 
 <template>
   <div class="users-view">
-    <h2 class="page-title">账号管理</h2>
+    <h2 class="page-title">{{ t('adminUsers.title') }}</h2>
     <p v-if="error" class="error">{{ error }}</p>
 
     <section class="card">
-      <h3>新增账号</h3>
+      <h3>{{ t('adminUsers.new') }}</h3>
       <form class="create-form" @submit.prevent="createUser">
-        <input v-model="newUsername" type="text" placeholder="用户名" />
-        <input v-model="newPassword" type="password" placeholder="密码" />
-        <input v-model="newDisplayName" type="text" placeholder="昵称（可选）" />
-        <button type="submit" :disabled="creating">{{ creating ? '创建中…' : '创建' }}</button>
+        <input v-model="newUsername" type="text" :placeholder="t('adminUsers.username')" />
+        <input v-model="newPassword" type="password" :placeholder="t('adminUsers.password')" />
+        <input v-model="newDisplayName" type="text" :placeholder="t('adminUsers.nickOptional')" />
+        <button type="submit" :disabled="creating">{{ creating ? t('adminUsers.creating') : t('adminUsers.create') }}</button>
       </form>
     </section>
 
     <section class="card">
-      <h3>账号列表</h3>
-      <p v-if="loading" class="hint">加载中…</p>
+      <h3>{{ t('adminUsers.list') }}</h3>
+      <p v-if="loading" class="hint">{{ t('adminUsers.loading') }}</p>
       <table v-else class="user-table">
         <thead>
           <tr>
-            <th class="col-username">用户名</th>
-            <th>昵称</th>
-            <th>重置密码</th>
-            <th class="col-time">创建时间</th>
-            <th class="col-actions">操作</th>
+            <th class="col-username">{{ t('adminUsers.username') }}</th>
+            <th>{{ t('adminUsers.nick') }}</th>
+            <th>{{ t('adminUsers.resetPassword') }}</th>
+            <th class="col-time">{{ t('adminUsers.createdAt') }}</th>
+            <th class="col-actions">{{ t('adminUsers.actions') }}</th>
           </tr>
         </thead>
         <tbody>
           <tr v-for="user in users" :key="user.id">
             <td class="col-username">{{ user.username }}</td>
             <td><input v-model="user.display_name" type="text" /></td>
-            <td><input v-model="user._newPassword" type="password" placeholder="留空则不修改" /></td>
+            <td><input v-model="user._newPassword" type="password" :placeholder="t('adminUsers.passwordPh')" /></td>
             <td class="col-time">{{ fmtTime(user.created_at) }}</td>
             <td class="col-actions">
-              <button class="btn" @click="saveUser(user)">保存</button>
-              <button class="btn danger" @click="removeUser(user)">删除</button>
+              <button class="btn" @click="saveUser(user)">{{ t('adminUsers.save') }}</button>
+              <button class="btn danger" @click="removeUser(user)">{{ t('adminUsers.delete') }}</button>
             </td>
           </tr>
         </tbody>

@@ -7,7 +7,7 @@ import DesktopPet from './components/DesktopPet.vue';
 import MiniPlayer from './components/MiniPlayer.vue';
 
 const route = useRoute();
-const isAdmin = computed(() => route.path.startsWith('/admin'));
+const isAdmin = computed(() => route.meta.admin);
 
 // 应用后台「设置 → 背景颜色」（覆盖 CSS 默认）
 onMounted(async () => {
@@ -21,11 +21,11 @@ onMounted(async () => {
 </script>
 
 <template>
-  <router-view v-if="isAdmin" />
+  <router-view v-if="isAdmin" :key="$route.params.lang" />
   <template v-else>
     <NavBar />
     <main class="page">
-      <router-view />
+      <router-view :key="$route.params.lang" />
     </main>
     <DesktopPet />
     <MiniPlayer />

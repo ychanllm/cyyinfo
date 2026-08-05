@@ -1,7 +1,9 @@
 <script setup>
 import { ref, onMounted } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { api } from '../api';
 
+const { t } = useI18n();
 const props = defineProps({
   targetType: { type: String, required: true },
   targetId: { type: Number, default: null },
@@ -31,7 +33,7 @@ async function submit() {
   notice.value = '';
   error.value = '';
   if (!nickname.value.trim() || !content.value.trim()) {
-    error.value = '请填写昵称和留言内容';
+    error.value = t('board.required');
     return;
   }
   submitting.value = true;
@@ -46,7 +48,7 @@ async function submit() {
       },
     });
     content.value = '';
-    notice.value = '留言已提交，审核后显示';
+    notice.value = t('board.submitted');
   } catch (e) {
     error.value = e.message;
   } finally {
@@ -59,18 +61,18 @@ onMounted(load);
 
 <template>
   <section class="board">
-    <h2 class="title">留言板</h2>
+    <h2 class="title">{{ t('board.title') }}</h2>
     <form class="form" @submit.prevent="submit">
-      <input v-model="nickname" type="text" placeholder="你的昵称" maxlength="20" />
+      <input v-model="nickname" type="text" :placeholder="t('board.nickPlaceholder')" maxlength="20" />
       <textarea
         v-model="content"
         rows="3"
-        placeholder="写下想说的话…"
+        :placeholder="t('board.contentPlaceholder')"
         maxlength="500"
       ></textarea>
       <p v-if="error" class="error">{{ error }}</p>
       <p v-if="notice" class="notice">{{ notice }}</p>
-      <button type="submit" :disabled="submitting">{{ submitting ? '提交中…' : '提交留言' }}</button>
+      <button type="submit" :disabled="submitting">{{ submitting ? t('board.submitting') : t('board.submit') }}</button>
     </form>
     <ul v-if="messages.length" class="list">
       <li v-for="m in messages" :key="m.id" class="item">
@@ -81,7 +83,7 @@ onMounted(load);
         <p class="text">{{ m.content }}</p>
       </li>
     </ul>
-    <p v-else class="empty">还没有留言，来说点什么吧</p>
+    <p v-else class="empty">{{ t('board.empty') }}</p>
   </section>
 </template>
 

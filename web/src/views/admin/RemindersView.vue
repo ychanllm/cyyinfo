@@ -1,7 +1,9 @@
 <script setup>
 import { ref, onMounted } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { api } from '../../api';
 
+const { t } = useI18n();
 const reminders = ref([]);
 const loading = ref(true);
 const error = ref('');
@@ -15,7 +17,7 @@ const formSendAt = ref('');
 const formRecipient = ref('');
 
 function statusText(s) {
-  return s === 'sent' ? '已发送' : s === 'failed' ? '失败' : '待发送';
+  return s === 'sent' ? t('adminReminders.sent') : s === 'failed' ? t('adminReminders.failed') : t('adminReminders.pending');
 }
 
 function fmtTime(s) {
@@ -54,7 +56,7 @@ function openEdit(r) {
 
 async function save() {
   if (!formTitle.value.trim() || !formSendAt.value) {
-    error.value = '标题和发送时间必填';
+    error.value = t('adminReminders.required');
     return;
   }
   saving.value = true;
@@ -81,7 +83,7 @@ async function save() {
 }
 
 async function remove(r) {
-  if (!confirm(`确定删除提醒「${r.title}」吗？`)) return;
+  if (!confirm(t('adminReminders.confirmDelete', { title: r.title }))) return;
   try {
     await api(`/admin/reminders/${r.id}`, { method: 'DELETE', admin: true });
     await load();
@@ -96,14 +98,14 @@ onMounted(load);
 <template>
   <div class="reminders-view">
     <div class="head">
-      <h2 class="page-title">提醒事项</h2>
-      <button class="btn primary" @click="openCreate">新增提醒</button>
+      <h2 class="page-title">{{ t('adminReminders.title') }}</h2>
+      <button class="btn primary" @click="openCreate">{{ t('adminReminders.new') }}</button>
     </div>
     <p v-if="error" class="error">{{ error }}</p>
-    <p v-if="loading" class="hint">加载中…</p>
+    <p v-if="loading" class="hint">{{ t('adminReminders.loading') }}</p>
 
     <section class="card">
-      <p v-if="!loading && !reminders.length" class="hint">还没有提醒，点「新增提醒」创建。到点后会自动发邮件。</p>
+      <p v-if="!loading && !reminders.length" class="hint">{{ t('adminReminders.empty') }}</p>
       <ul v-else class="list">
         <li v-for="r in reminders" :key="r.id" class="item">
           <div class="info">
@@ -112,10 +114,10 @@ onMounted(load);
           </div>
           <p class="time">{{ fmtTime(r.send_at) }}<template v-if="r.recipient"> · {{ r.recipient }}</template></p>
           <p v-if="r.content" class="content">{{ r.content }}</p>
-          <p v-if="r.status === 'failed' && r.error" class="fail-err">发送失败：{{ r.error }}</p>
+          <p v-if="r.status === 'failed' && r.error" class="fail-err">{{ t('adminReminders.sendFailed', { error: r.error }) }}</p>
           <div class="actions">
-            <button class="btn" @click="openEdit(r)">编辑</button>
-            <button class="btn danger" @click="remove(r)">删除</button>
+            <button class="btn" @click="openEdit(r)">{{ t('adminReminders.edit') }}</button>
+            <button class="btn danger" @click="remove(r)">{{ t('adminReminders.delete') }}</button>
           </div>
         </li>
       </ul>
@@ -123,26 +125,26 @@ onMounted(load);
 
     <div v-if="formOpen" class="modal">
       <form class="form-card" @submit.prevent="save">
-        <h3>{{ editingId ? '编辑提醒' : '新增提醒' }}</h3>
+        <h3>{{ editingId ? t('adminReminders.editTitle') : t('adminReminders.newTitle') }}</h3>
         <label class="field">
-          标题
-          <input v-model="formTitle" type="text" placeholder="提醒标题" />
+          {{ t('adminReminders.title') }}
+          <input v-model="formTitle" type="text" :placeholder="t('adminReminders.titlePh')" />
         </label>
         <label class="field">
-          内容（邮件正文，留空则只发标题）
-          <textarea v-model="formContent" rows="3" placeholder="到点想说的话…"></textarea>
+          {{ t('adminReminders.content') }}
+          <textarea v-model="formContent" rows="3" :placeholder="t('adminReminders.contentPh')"></textarea>
         </label>
         <label class="field">
-          发送时间（到点自动发邮件）
+          {{ t('adminReminders.sendAt') }}
           <input v-model="formSendAt" type="datetime-local" />
         </label>
         <label class="field">
-          收件邮箱（留空用设置里的默认收件人）
+          {{ t('adminReminders.recipient') }}
           <input v-model="formRecipient" type="email" placeholder="xxx@qq.com" />
         </label>
         <div class="actions">
-          <button type="button" class="btn" @click="formOpen = false">取消</button>
-          <button type="submit" class="btn primary" :disabled="saving">{{ saving ? '保存中…' : '保存' }}</button>
+          <button type="button" class="btn" @click="formOpen = false">{{ t('adminReminders.cancel') }}</button>
+          <button type="submit" class="btn primary" :disabled="saving">{{ saving ? t('adminReminders.saving') : t('adminReminders.save') }}</button>
         </div>
       </form>
     </div>

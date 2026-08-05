@@ -1,9 +1,12 @@
 <script setup>
 import { ref, onMounted, onUnmounted, watch } from 'vue';
 import { useRoute } from 'vue-router';
+import { useI18n } from 'vue-i18n';
 import { api } from '../api';
+import { localize } from '../i18n';
 import Lightbox from '../components/Lightbox.vue';
 
+const { t } = useI18n();
 const route = useRoute();
 const album = ref(null);
 const loading = ref(true);
@@ -67,9 +70,9 @@ watch(() => route.params.id, load);
 
 <template>
   <div class="album-detail">
-    <router-link to="/albums" class="back">&larr; 返回相册</router-link>
+    <router-link :to="localize('/albums')" class="back">&larr; {{ t('albumDetail.back') }}</router-link>
 
-    <p v-if="loading" class="hint">加载中…</p>
+    <p v-if="loading" class="hint">{{ t('albumDetail.loading') }}</p>
     <p v-else-if="error" class="hint">{{ error }}</p>
 
     <template v-else-if="album">
@@ -78,7 +81,7 @@ watch(() => route.params.id, load);
         <p v-if="album.description" class="desc">{{ album.description }}</p>
       </header>
 
-      <p v-if="!album.photos.length" class="hint">这个相册还没有照片</p>
+      <p v-if="!album.photos.length" class="hint">{{ t('albumDetail.noPhotos') }}</p>
 
       <template v-else>
         <div class="carousel" ref="carouselEl" @scroll.passive="onScroll">
@@ -96,9 +99,9 @@ watch(() => route.params.id, load);
         </div>
 
         <div class="controls">
-          <button class="nav" :disabled="activeIndex <= 0" @click="goTo(-1)" aria-label="上一张">&#8249;</button>
+          <button class="nav" :disabled="activeIndex <= 0" @click="goTo(-1)" :aria-label="t('albumDetail.prev')">&#8249;</button>
           <span class="counter font-hand">{{ activeIndex + 1 }} / {{ album.photos.length }}</span>
-          <button class="nav" :disabled="activeIndex >= album.photos.length - 1" @click="goTo(1)" aria-label="下一张">&#8250;</button>
+          <button class="nav" :disabled="activeIndex >= album.photos.length - 1" @click="goTo(1)" :aria-label="t('albumDetail.next')">&#8250;</button>
         </div>
       </template>
 

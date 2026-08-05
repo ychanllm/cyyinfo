@@ -1,8 +1,11 @@
 <script setup>
 import { ref, computed } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
+import { useI18n } from 'vue-i18n';
 import { api, setAdminToken } from '../../api';
+import { localize } from '../../i18n';
 
+const { t } = useI18n();
 const router = useRouter();
 const route = useRoute();
 const username = ref('');
@@ -13,13 +16,13 @@ const loading = ref(false);
 // 登录后回到原本要访问的页面（如 /admin/diaries），默认进后台
 const redirectTarget = computed(() => {
   const r = route.query.redirect;
-  return typeof r === 'string' && r.startsWith('/') ? r : '/admin';
+  return typeof r === 'string' && r.startsWith('/') ? r : localize('/admin');
 });
 
 async function submit() {
   error.value = '';
   if (!username.value.trim() || !password.value) {
-    error.value = '请输入账号和密码';
+    error.value = t('adminLogin.required');
     return;
   }
   loading.value = true;
@@ -41,12 +44,12 @@ async function submit() {
 <template>
   <div class="login">
     <form class="card" @submit.prevent="submit">
-      <h1>管理后台</h1>
-      <p class="hint">请使用管理员账号登录</p>
-      <input v-model="username" type="text" placeholder="账号" autocomplete="username" />
-      <input v-model="password" type="password" placeholder="密码" autocomplete="current-password" />
+      <h1>{{ t('adminLogin.title') }}</h1>
+      <p class="hint">{{ t('adminLogin.hint') }}</p>
+      <input v-model="username" type="text" :placeholder="t('adminLogin.username')" autocomplete="username" />
+      <input v-model="password" type="password" :placeholder="t('adminLogin.password')" autocomplete="current-password" />
       <p v-if="error" class="error">{{ error }}</p>
-      <button type="submit" :disabled="loading">{{ loading ? '登录中…' : '登录' }}</button>
+      <button type="submit" :disabled="loading">{{ loading ? t('adminLogin.signingIn') : t('adminLogin.signIn') }}</button>
     </form>
   </div>
 </template>

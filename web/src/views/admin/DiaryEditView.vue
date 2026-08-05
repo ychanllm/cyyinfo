@@ -1,9 +1,12 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+import { useI18n } from 'vue-i18n';
 import { marked } from 'marked';
 import { api, apiUpload } from '../../api';
+import { localize } from '../../i18n';
 
+const { t } = useI18n();
 const route = useRoute();
 const router = useRouter();
 
@@ -12,8 +15,11 @@ const diaryId = computed(() => (route.params.id ? Number(route.params.id) : null
 const isEdit = computed(() => diaryId.value !== null);
 
 const title = ref('');
+const titleEn = ref('');
 const slug = ref('');
 const content = ref('');
+const contentEn = ref('');
+const contentLang = ref('zh'); // 正文编辑标签页：zh / en
 const status = ref('draft');
 const coverFilename = ref('');
 const categories = ref([]); // 分类下拉选项
@@ -43,7 +49,8 @@ function fmtVersionTime(s) {
 }
 
 // v-html 安全前提：content_md 为管理员自写的可信内容，首版不做消毒（spec 决策）。
-const html = computed(() => marked.parse(content.value || ''));
+const activeContent = computed(() => (contentLang.value === 'en' ? contentEn.value : content.value));
+const html = computed(() => marked.parse(activeContent.value || ''));
 
 onMounted(async () => {
   // 分类下拉选项（新建与编辑都需要）
@@ -56,8 +63,10 @@ onMounted(async () => {
   try {
     const d = await api(`/admin/diaries/${diaryId.value}`, { admin: true });
     title.value = d.title || '';
+    titleEn.value = d.title_en || '';
     slug.value = d.slug || '';
     content.value = d.content_md || '';
+    contentEn.value = d.content_md_en || '';
     status.value = d.status || 'draft';
     coverFilename.value = d.cover_filename || '';
     categoryId.value = d.category_id || null;
@@ -85,14 +94,16 @@ function showSaved(msg) {
 
 async function save(targetStatus) {
   if (!title.value.trim()) {
-    error.value = '请输入标题';
+    error.value = t('adminDiaryEdit.titleRequired');
     return;
   }
   saving.value = true;
   error.value = '';
   const payload = {
     title: title.value.trim(),
+    title_en: titleEn.value.trim(),
     content_md: content.value,
+    content_md_en: contentEn.value,
     slug: slug.value.trim() || null,
     status: targetStatus,
     category_id: categoryId.value,
@@ -101,12 +112,12 @@ async function save(targetStatus) {
     if (isEdit.value) {
       await api(`/admin/diaries/${diaryId.value}`, { method: 'PUT', admin: true, body: payload });
       status.value = targetStatus;
-      showSaved(targetStatus === 'published' ? '已发布' : '草稿已保存');
+      showSaved(targetStatus === 'published' ? t('adminDiaryEdit.publishedTip') : t('adminDiaryEdit.draftSavedTip'));
       refreshVersions();
     } else {
       const r = await api('/admin/diaries', { method: 'POST', admin: true, body: payload });
       // 新建保存后跳到编辑页，之后即可上传封面
-      router.replace(`/admin/diaries/${r.id}/edit`);
+      router.replace(localize(`/admin/diaries/${r.id}/edit`));
     }
   } catch (e) {
     error.value = e.message;
@@ -137,64 +148,83 @@ async function uploadCover(event) {
 <template>
   <div class="diary-edit">
     <div class="head">
-      <h2 class="page-title">{{ isEdit ? '编辑日记' : '写日记' }}</h2>
+      <h2 class="page-title">{{ isEdit ? t('adminDiaryEdit.editTitle') : t('adminDiaryEdit.newTitle') }}</h2>
       <div class="head-actions">
         <span v-if="isEdit" class="badge" :class="status === 'published' ? 'published' : 'draft'">
-          {{ status === 'published' ? '已发布' : '草稿' }}
+          {{ status === 'published' ? t('adminDiaryEdit.published') : t('adminDiaryEdit.draft') }}
         </span>
         <span v-if="savedTip" class="saved-tip">{{ savedTip }}</span>
-        <button class="btn" :disabled="saving" @click="save('draft')">保存草稿</button>
+        <button class="btn" :disabled="saving" @click="save('draft')">{{ t('adminDiaryEdit.saveDraft') }}</button>
         <button class="btn primary" :disabled="saving" @click="save('published')">
-          {{ saving ? '保存中…' : '发布' }}
+          {{ saving ? t('adminDiaryEdit.saving') : t('adminDiaryEdit.publish') }}
         </button>
       </div>
     </div>
     <p v-if="error" class="error">{{ error }}</p>
-    <p v-if="loading" class="hint">加载中…</p>
+    <p v-if="loading" class="hint">{{ t('adminDiaryEdit.loading') }}</p>
 
     <div v-else class="panes">
       <section class="card form-pane">
         <label class="field">
-          <span class="label">标题</span>
-          <input v-model="title" type="text" placeholder="日记标题" />
+          <span class="label">{{ t('adminDiaryEdit.title') }} · {{ t('adminDiaryEdit.zh') }}</span>
+          <input v-model="title" type="text" :placeholder="t('adminDiaryEdit.titlePlaceholder')" />
         </label>
         <label class="field">
-          <span class="label">slug（留空则用文章 ID 访问）</span>
-          <input v-model="slug" type="text" placeholder="如 my-first-diary" />
+          <span class="label">{{ t('adminDiaryEdit.title') }} · {{ t('adminDiaryEdit.en') }}</span>
+          <input v-model="titleEn" type="text" :placeholder="t('adminDiaryEdit.titlePlaceholderEn')" class="en-input" />
         </label>
         <label class="field">
-          <span class="label">分类</span>
+          <span class="label">{{ t('adminDiaryEdit.slug') }}</span>
+          <input v-model="slug" type="text" :placeholder="t('adminDiaryEdit.slugPlaceholder')" />
+        </label>
+        <label class="field">
+          <span class="label">{{ t('adminDiaryEdit.category') }}</span>
           <select v-model="categoryId">
-            <option :value="null">未分类</option>
+            <option :value="null">{{ t('adminDiaryEdit.uncategorized') }}</option>
             <option v-for="cat in categories" :key="cat.id" :value="cat.id">{{ cat.name }}</option>
           </select>
         </label>
         <div class="field">
-          <span class="label">封面图</span>
+          <span class="label">{{ t('adminDiaryEdit.cover') }}</span>
           <div class="cover-row">
-            <img v-if="coverFilename" :src="`/uploads/${coverFilename}`" alt="封面预览" class="cover-preview" />
+            <img v-if="coverFilename" :src="`/uploads/${coverFilename}`" :alt="t('adminDiaryEdit.coverPreview')" class="cover-preview" />
             <label v-if="isEdit" class="btn upload-btn">
-              {{ uploading ? '上传中…' : coverFilename ? '更换封面' : '上传封面' }}
+              {{ uploading ? t('adminDiaryEdit.uploading') : coverFilename ? t('adminDiaryEdit.changeCover') : t('adminDiaryEdit.uploadCover') }}
               <input type="file" accept="image/*" class="file-input" :disabled="uploading" @change="uploadCover" />
             </label>
-            <span v-else class="hint">保存后即可上传封面</span>
+            <span v-else class="hint">{{ t('adminDiaryEdit.coverAfterSave') }}</span>
           </div>
         </div>
-        <label class="field content-field">
-          <span class="label">正文（Markdown）</span>
-          <textarea v-model="content" placeholder="用 Markdown 记录今天吧…"></textarea>
-        </label>
+        <div class="field content-field">
+          <div class="content-head">
+            <span class="label">{{ t('adminDiaryEdit.content') }}</span>
+            <div class="lang-tabs">
+              <button type="button" :class="{ active: contentLang === 'zh' }" @click="contentLang = 'zh'">{{ t('adminDiaryEdit.zh') }}</button>
+              <button type="button" :class="{ active: contentLang === 'en' }" @click="contentLang = 'en'">{{ t('adminDiaryEdit.en') }}</button>
+            </div>
+          </div>
+          <textarea
+            v-if="contentLang === 'zh'"
+            v-model="content"
+            :placeholder="t('adminDiaryEdit.contentPlaceholder')"
+          ></textarea>
+          <textarea
+            v-else
+            v-model="contentEn"
+            :placeholder="t('adminDiaryEdit.contentPlaceholderEn')"
+          ></textarea>
+        </div>
       </section>
 
       <section class="card preview-pane">
-        <span class="label">预览</span>
+        <span class="label">{{ t('adminDiaryEdit.preview') }}</span>
         <!-- v-html 安全前提：管理员自写的可信内容，首版不做消毒（spec 决策） -->
         <div class="md-body preview-body" v-html="html"></div>
       </section>
     </div>
 
     <section v-if="isEdit && versions.length" class="card versions-card">
-      <span class="label">编辑记录（共 {{ versions.length }} 次）</span>
+      <span class="label">{{ t('adminDiaryEdit.versionCount', { n: versions.length }) }}</span>
       <ul class="version-list">
         <li
           v-for="v in versions"
@@ -204,11 +234,11 @@ async function uploadCover(event) {
           :style="{ '--vc': versionColor(v.version) }"
         >
           <span class="dot"></span>
-          <span class="v-no">第 {{ v.version }} 次</span>
+          <span class="v-no">{{ t('adminDiaryEdit.versionNo', { n: v.version }) }}</span>
           <span class="v-time">{{ fmtVersionTime(v.saved_at) }}</span>
-          <span v-if="v.version === versions.length" class="v-tag">当前</span>
+          <span v-if="v.version === versions.length" class="v-tag">{{ t('adminDiaryEdit.current') }}</span>
           <button class="v-view" @click="showVersionId = showVersionId === v.id ? null : v.id">
-            {{ showVersionId === v.id ? '收起' : '查看' }}
+            {{ showVersionId === v.id ? t('adminDiaryEdit.collapse') : t('adminDiaryEdit.view') }}
           </button>
         </li>
       </ul>
@@ -299,6 +329,37 @@ async function uploadCover(event) {
 .field select:focus,
 .field textarea:focus {
   border-color: var(--color-primary);
+}
+.en-input {
+  border-color: #d8cbb9 !important;
+  background: #fdfaf5;
+}
+.content-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+.content-head .label {
+  margin-bottom: 0;
+}
+.lang-tabs {
+  display: flex;
+  gap: 4px;
+}
+.lang-tabs button {
+  border: 1px solid var(--color-border);
+  background: #fff;
+  border-radius: 6px;
+  padding: 2px 10px;
+  font-size: 12px;
+  color: var(--color-text-light);
+  cursor: pointer;
+}
+.lang-tabs button.active {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: #fff;
 }
 .cover-row {
   display: flex;

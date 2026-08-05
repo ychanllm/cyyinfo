@@ -1,8 +1,11 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { api } from '../api';
+import { localize } from '../i18n';
 import MessageBoard from '../components/MessageBoard.vue';
 
+const { t } = useI18n();
 const status = ref({});
 const diaries = ref([]);
 const photo = ref(null);
@@ -21,7 +24,7 @@ const heroLabelText = computed(() => {
   const custom = status.value.hero_label;
   if (custom) return custom.replace(/\{date\}/g, date);
   if (diffDays.value === null) return '';
-  return diffDays.value >= 0 ? `从 ${date} 到现在` : `距离 ${date}`;
+  return diffDays.value >= 0 ? t('home.heroLabelSince', { date }) : t('home.heroLabelUntil', { date });
 });
 
 // 首页标题天数（正数=在一起天数，负数=距纪念日天数）
@@ -35,7 +38,9 @@ const heroTitleText = computed(() => {
   const custom = status.value.hero_title;
   const d = String(heroDaysText.value);
   if (custom) return custom.replace(/\{days\}/g, d);
-  return diffDays.value !== null && diffDays.value >= 0 ? `我们在一起 ${d} 天` : `还有 ${d} 天到纪念日`;
+  return diffDays.value !== null && diffDays.value >= 0
+    ? t('home.heroDaysTogether', { days: d })
+    : t('home.heroDaysUntil', { days: d });
 });
 
 function fmtDate(s) {
@@ -66,30 +71,30 @@ onMounted(async () => {
       <template v-if="diffDays !== null">
         <p class="hero-label">{{ heroLabelText }}</p>
         <h1 v-if="status.hero_title" class="hero-title">{{ heroTitleText }}</h1>
-        <h1 v-else-if="diffDays >= 0" class="hero-title">我们在一起 <span class="num">{{ diffDays + 1 }}</span> 天</h1>
-        <h1 v-else class="hero-title">还有 <span class="num">{{ -diffDays }}</span> 天到纪念日</h1>
+        <h1 v-else-if="diffDays >= 0" class="hero-title">{{ t('home.heroDaysTogether', { days: diffDays + 1 }) }}</h1>
+        <h1 v-else class="hero-title">{{ t('home.heroDaysUntil', { days: -diffDays }) }}</h1>
       </template>
-      <h1 v-else class="hero-title">欢迎来到{{ status.site_name || '我们的小站' }}</h1>
+      <h1 v-else class="hero-title">{{ t('home.welcome', { name: status.site_name || t('home.defaultSiteName') }) }}</h1>
     </section>
 
     <div class="grid">
       <section class="card diaries">
-        <h2 class="card-title">最新日记</h2>
+        <h2 class="card-title">{{ t('home.latestDiaries') }}</h2>
         <ul v-if="diaries.length" class="diary-list">
           <li v-for="d in diaries" :key="d.id">
-            <router-link :to="`/diaries/${d.slug || d.id}`" class="diary">
+            <router-link :to="localize(`/diaries/${d.slug || d.id}`)" class="diary">
               <h3 class="diary-title">{{ d.title }}</h3>
               <p class="diary-excerpt">{{ d.excerpt }}</p>
               <p class="diary-date">{{ fmtDate(d.published_at) }}</p>
             </router-link>
           </li>
         </ul>
-        <p v-else class="empty">还没有日记，敬请期待</p>
+        <p v-else class="empty">{{ t('home.emptyDiaries') }}</p>
       </section>
 
       <section v-if="photo" class="card photo-card">
-        <h2 class="card-title">随手一拍</h2>
-        <router-link to="/albums" class="polaroid photo-link">
+        <h2 class="card-title">{{ t('home.snapshot') }}</h2>
+        <router-link :to="localize('/albums')" class="polaroid photo-link">
           <span class="tape peach"></span>
           <img :src="`/uploads/${photo.cover_filename}`" :alt="photo.title" class="photo" />
           <p class="photo-title font-hand">{{ photo.title }}</p>

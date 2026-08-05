@@ -1,8 +1,11 @@
 <script setup>
 import { ref, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
+import { useI18n } from 'vue-i18n';
 import { api } from '../../api';
+import { localize } from '../../i18n';
 
+const { t } = useI18n();
 const router = useRouter();
 
 const diaries = ref([]);
@@ -50,40 +53,40 @@ onMounted(loadDiaries);
 <template>
   <div class="diaries-view">
     <div class="head">
-      <h2 class="page-title">日记管理</h2>
-      <button class="btn primary" @click="router.push('/admin/diaries/new')">写日记</button>
+      <h2 class="page-title">{{ t('adminDiaries.title') }}</h2>
+      <button class="btn primary" @click="router.push(localize('/admin/diaries/new'))">{{ t('adminDiaries.new') }}</button>
     </div>
     <p v-if="error" class="error">{{ error }}</p>
 
     <section class="card">
-      <p v-if="loading" class="hint">加载中…</p>
-      <p v-else-if="!diaries.length" class="hint">还没有日记，点击右上角「写日记」开始吧</p>
+      <p v-if="loading" class="hint">{{ t('adminDiaries.loading') }}</p>
+      <p v-else-if="!diaries.length" class="hint">{{ t('adminDiaries.empty') }}</p>
       <table v-else class="diary-table">
         <thead>
           <tr>
-            <th>标题</th>
+            <th>{{ t('adminDiaries.titleCol') }}</th>
             <th>slug</th>
-            <th>分类</th>
-            <th class="col-status">状态</th>
-            <th class="col-time">更新时间</th>
-            <th class="col-actions">操作</th>
+            <th>{{ t('adminDiaries.category') }}</th>
+            <th class="col-status">{{ t('adminDiaries.status') }}</th>
+            <th class="col-time">{{ t('adminDiaries.updated') }}</th>
+            <th class="col-actions">{{ t('adminDiaries.actions') }}</th>
           </tr>
         </thead>
         <tbody>
           <tr v-for="diary in diaries" :key="diary.id">
             <td class="title-cell">{{ diary.title }}</td>
-            <td class="slug-cell">{{ diary.slug || '—' }}</td>
-            <td class="cat-cell">{{ diary.category_name || '—' }}</td>
+            <td class="slug-cell"><span class="m-label">{{ t('adminDiaries.labelSlug') }}</span>{{ diary.slug || '—' }}</td>
+            <td class="cat-cell"><span class="m-label">{{ t('adminDiaries.labelCat') }}</span>{{ diary.category_name || '—' }}</td>
             <td class="col-status">
               <span class="badge" :class="diary.status === 'published' ? 'published' : 'draft'">
-                {{ diary.status === 'published' ? '已发布' : '草稿' }}
+                {{ diary.status === 'published' ? t('adminDiaries.published') : t('adminDiaries.draft') }}
               </span>
             </td>
-            <td class="col-time">{{ fmtTime(diary.updated_at) }}</td>
+            <td class="col-time"><span class="m-label">{{ t('adminDiaries.labelUpdated') }}</span>{{ fmtTime(diary.updated_at) }}</td>
             <td class="col-actions">
-              <button class="btn" @click="router.push(`/admin/diaries/${diary.id}/edit`)">编辑</button>
+              <button class="btn" @click="router.push(localize(`/admin/diaries/${diary.id}/edit`))">{{ t('adminDiaries.edit') }}</button>
               <button class="btn" @click="toggleStatus(diary)">
-                {{ diary.status === 'published' ? '撤回' : '发布' }}
+                {{ diary.status === 'published' ? t('adminDiaries.unpublish') : t('adminDiaries.publish') }}
               </button>
             </td>
           </tr>
@@ -156,6 +159,9 @@ onMounted(loadDiaries);
   width: 200px;
   white-space: nowrap;
 }
+.m-label {
+  display: none;
+}
 .badge {
   display: inline-block;
   padding: 2px 10px;
@@ -227,14 +233,9 @@ onMounted(loadDiaries);
     font-size: 16px;
     font-weight: 600;
   }
-  .slug-cell::before {
-    content: 'slug：';
-  }
-  .cat-cell::before {
-    content: '分类：';
-  }
-  .col-time::before {
-    content: '更新时间：';
+  .m-label {
+    display: inline;
+    margin-right: 4px;
   }
   .slug-cell,
   .cat-cell,

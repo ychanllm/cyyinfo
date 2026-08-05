@@ -1,7 +1,11 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { api } from '../api';
+import { localize } from '../i18n';
+import { fmtDateFull } from '../utils/date';
 
+const { t } = useI18n();
 const PAGE_SIZE = 10; // 与后端每页条数一致
 
 const diaries = ref([]);
@@ -13,12 +17,6 @@ const categories = ref([]); // 分类筛选 chips
 const activeCategory = ref(null); // null = 全部
 
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / PAGE_SIZE)));
-
-function fmtDate(s) {
-  const d = new Date(s);
-  if (Number.isNaN(d.getTime())) return String(s || '').slice(0, 10);
-  return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`;
-}
 
 async function load(p) {
   loading.value = true;
@@ -52,14 +50,14 @@ onMounted(async () => {
 
 <template>
   <div class="diaries">
-    <h1 class="page-title">日记</h1>
+    <h1 class="page-title">{{ t('diaries.title') }}</h1>
 
     <div v-if="categories.length" class="cat-filter">
       <button
         class="chip"
         :class="{ active: activeCategory === null }"
         @click="selectCategory(null)"
-      >全部</button>
+      >{{ t('diaries.all') }}</button>
       <button
         v-for="cat in categories"
         :key="cat.id"
@@ -71,17 +69,17 @@ onMounted(async () => {
       </button>
     </div>
 
-    <p v-if="loading" class="hint">加载中…</p>
+    <p v-if="loading" class="hint">{{ t('diaries.loading') }}</p>
     <p v-else-if="error" class="hint">{{ error }}</p>
     <p v-else-if="!diaries.length" class="hint">
-      {{ activeCategory ? '该分类下还没有日记' : '还没有日记，敬请期待' }}
+      {{ activeCategory ? t('diaries.emptyCategory') : t('diaries.empty') }}
     </p>
 
     <template v-else>
       <router-link
         v-for="d in diaries"
         :key="d.id"
-        :to="`/diaries/${d.slug || d.id}`"
+        :to="localize(`/diaries/${d.slug || d.id}`)"
         class="card"
       >
         <img
@@ -95,15 +93,15 @@ onMounted(async () => {
           <p v-if="d.excerpt" class="excerpt">{{ d.excerpt }}</p>
           <p class="info">
             <span v-if="d.category_name" class="cat-badge">{{ d.category_name }}</span>
-            {{ d.author }} · {{ fmtDate(d.published_at) }}
+            {{ d.author }} · {{ fmtDateFull(d.published_at) }}
           </p>
         </div>
       </router-link>
 
       <div v-if="totalPages > 1" class="pager">
-        <button :disabled="page <= 1" @click="load(page - 1)">上一页</button>
-        <span class="page-no">第 {{ page }} / {{ totalPages }} 页</span>
-        <button :disabled="page >= totalPages" @click="load(page + 1)">下一页</button>
+        <button :disabled="page <= 1" @click="load(page - 1)">{{ t('diaries.prev') }}</button>
+        <span class="page-no">{{ t('diaries.pageNo', { page, total: totalPages }) }}</span>
+        <button :disabled="page >= totalPages" @click="load(page + 1)">{{ t('diaries.next') }}</button>
       </div>
     </template>
   </div>

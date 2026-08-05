@@ -1,5 +1,6 @@
 <script setup>
-import { onMounted, onUnmounted, reactive, ref } from 'vue';
+import { onMounted, onUnmounted, reactive, ref, watch } from 'vue';
+import { i18n } from '../i18n';
 
 const wrap = ref(null);
 const bubble = ref(null);
@@ -56,14 +57,33 @@ function onClick() {
   pet.play(pool[Math.floor(Math.random() * pool.length)]);
 }
 
-onMounted(async () => {
-  pos.x = window.innerWidth - wrap.value.offsetWidth - 24;
-  pos.y = window.innerHeight - wrap.value.offsetHeight - 24;
+// 按当前语言加载皮肤（en 用英文版）
+function skinUrl() {
+  return i18n.global.locale.value === 'en'
+    ? '/pet/skins/default/skin.en.json'
+    : '/pet/skins/default/skin.json';
+}
+
+async function mountPet() {
+  pet?.destroy();
+  pet = null;
   const { createPet } = await import('../pet/pet-adapter.js');
-  const created = await createPet(cv.value, bubble.value, '/pet/skins/default/skin.json');
+  const created = await createPet(cv.value, bubble.value, skinUrl());
   // await 期间组件可能已卸载，立即销毁避免泄漏
   if (unmounted) { created.destroy(); return; }
   pet = created;
+}
+
+onMounted(async () => {
+  pos.x = window.innerWidth - wrap.value.offsetWidth - 24;
+  pos.y = window.innerHeight - wrap.value.offsetHeight - 24;
+  await mountPet();
+});
+
+// 切换语言时用对应语言的皮肤重建桌宠
+watch(() => i18n.global.locale.value, () => {
+  if (bubble.value) bubble.value.style.opacity = '0';
+  mountPet();
 });
 
 onUnmounted(() => {
