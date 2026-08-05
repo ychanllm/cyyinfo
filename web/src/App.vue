@@ -1,7 +1,8 @@
 <script setup>
 import { computed, onMounted } from 'vue';
 import { useRoute } from 'vue-router';
-import { api } from './api';
+import { api, getGuestToken, getAdminToken } from './api';
+import { autoPlayMusic } from './player';
 import NavBar from './components/NavBar.vue';
 import DesktopPet from './components/DesktopPet.vue';
 import MiniPlayer from './components/MiniPlayer.vue';
@@ -17,6 +18,8 @@ onMounted(async () => {
       document.documentElement.style.setProperty('--bg', s.background_color);
     }
   } catch { /* 保持 CSS 默认 */ }
+  // 已有有效令牌（访客/管理员）直接进入站点时自动播放音乐
+  if (getGuestToken() || getAdminToken()) autoPlayMusic();
 });
 </script>
 

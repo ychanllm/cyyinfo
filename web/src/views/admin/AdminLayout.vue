@@ -5,6 +5,7 @@ import { useI18n } from 'vue-i18n';
 import { clearAdminToken } from '../../api';
 import { localize } from '../../i18n';
 import LangSwitch from '../../components/LangSwitch.vue';
+import MiniPlayer from '../../components/MiniPlayer.vue';
 
 const { t } = useI18n();
 const router = useRouter();
@@ -49,6 +50,7 @@ function logout() {
     <main class="content">
       <router-view :key="$route.params.lang" />
     </main>
+    <MiniPlayer />
   </div>
 </template>
 
@@ -63,6 +65,7 @@ function logout() {
   background: var(--color-card);
   border-right: 1px solid var(--color-border);
   padding: 24px 16px;
+  padding-bottom: 80px; /* 给底部迷你播放器留出空间 */
   display: flex;
   flex-direction: column;
 }
@@ -115,6 +118,7 @@ function logout() {
 .content {
   flex: 1;
   padding: 32px;
+  padding-bottom: 90px; /* 给底部迷你播放器留出空间 */
   min-width: 0;
 }
 @media (max-width: 720px) {

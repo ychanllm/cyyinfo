@@ -4,6 +4,7 @@ import { useRouter, useRoute } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { api, setAdminToken } from '../../api';
 import { localize } from '../../i18n';
+import { autoPlayMusic } from '../../player';
 
 const { t } = useI18n();
 const router = useRouter();
@@ -33,6 +34,7 @@ async function submit() {
     });
     setAdminToken(token);
     router.replace(redirectTarget.value);
+    autoPlayMusic(); // 进入后台自动播放音乐
   } catch (e) {
     error.value = e.message;
   } finally {
