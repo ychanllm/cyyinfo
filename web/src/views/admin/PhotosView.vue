@@ -153,7 +153,15 @@ async function uploadPhotos(event) {
   }
 }
 
-async function saveCaption(photo) {
+const savingId = ref(null); // 正在保存的照片 id
+const savedId = ref(null); // 刚保存完成的照片 id
+let saveTimer = null; // 输入防抖定时器
+let feedbackTimer = null; // “已保存”提示隐藏定时器
+
+async function saveCaption(photo, e) {
+  if (e && e.isComposing) return; // 中文输入法组词期间值尚未提交，跳过
+  if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
+  savingId.value = photo.id;
   error.value = '';
   try {
     await api(`/admin/photos/${photo.id}`, {
@@ -161,9 +169,21 @@ async function saveCaption(photo) {
       admin: true,
       body: { caption: photo.caption || '' },
     });
+    savedId.value = photo.id;
+    if (feedbackTimer) clearTimeout(feedbackTimer);
+    feedbackTimer = setTimeout(() => { savedId.value = null; }, 1600);
   } catch (e) {
     error.value = e.message;
+  } finally {
+    savingId.value = null;
   }
+}
+
+// 输入停顿 600ms 自动保存，避免依赖失焦事件（某些浏览器按回车或直接切走不会触发 change）
+function onCaptionInput(photo, e) {
+  if (e && e.isComposing) return; // 组词中不保存，compositionend 后会再触发一次 input
+  if (saveTimer) clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => saveCaption(photo), 600);
 }
 
 async function setCover(photo) {
@@ -259,12 +279,22 @@ onMounted(loadAlbums);
         <div v-for="photo in photos" :key="photo.id" class="cell">
           <img :src="`/uploads/${photo.filename}`" :alt="photo.caption || ''" class="img" loading="lazy" />
           <div class="cell-body">
-            <input
-              v-model="photo.caption"
-              type="text"
-              placeholder="照片说明"
-              @change="saveCaption(photo)"
-            />
+            <div class="caption-row">
+              <input
+                v-model="photo.caption"
+                type="text"
+                placeholder="照片说明"
+                @input="onCaptionInput(photo, $event)"
+                @keyup.enter="saveCaption(photo, $event)"
+                @change="saveCaption(photo, $event)"
+              />
+              <span
+                class="save-hint"
+                :class="{ saving: savingId === photo.id, saved: savedId === photo.id }"
+              >
+                {{ savingId === photo.id ? '保存中…' : (savedId === photo.id ? '已保存' : '') }}
+              </span>
+            </div>
             <select class="move-select" @change="movePhoto(photo, $event.target.value)">
               <option value="" selected disabled>移动到…</option>
               <option v-for="a in moveTargets" :key="a.id" :value="a.id">{{ a.title }}</option>
@@ -458,6 +488,24 @@ onMounted(loadAlbums);
   font-size: 13px;
   outline: none;
   margin-bottom: 8px;
+}
+.caption-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.caption-row input {
+  flex: 1;
+  margin-bottom: 0;
+}
+.save-hint {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--color-text-light);
+  white-space: nowrap;
+}
+.save-hint.saved {
+  color: #27ae60;
 }
 .cell-body input:focus,
 .move-select:focus {
