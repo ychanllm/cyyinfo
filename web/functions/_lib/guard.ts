@@ -12,14 +12,14 @@ export async function setSetting(db: D1Database, key: string, value: string): Pr
     .bind(key, value).run();
 }
 
-// 公开内容守卫：口令为空放行，否则要求 admin/guest JWT
+// 公开内容守卫：口令为空放行，否则要求 admin/guest/user JWT
 export async function contentGuard(c: Context<{ Bindings: Env }>, next: Next) {
   const hash = await getSetting(c.env.DB, 'site_passcode_hash');
   if (!hash) return next();
   const header = c.req.header('Authorization') ?? '';
   const token = header.replace(/^Bearer\s+/i, '');
   const payload = token ? await verifyJwt(c.env, token) : null;
-  if (!payload || (payload.role !== 'guest' && payload.role !== 'admin')) {
+  if (!payload || (payload.role !== 'guest' && payload.role !== 'admin' && payload.role !== 'user')) {
     return c.json({ detail: '需要访客口令' }, 401);
   }
   await next();

@@ -32,3 +32,14 @@ export async function adminAuth(c: Context<{ Bindings: Env }>, next: Next) {
   c.set('admin', { id: payload.sub as number, username: payload.username as string });
   await next();
 }
+
+export async function userAuth(c: Context<{ Bindings: Env }>, next: Next) {
+  const header = c.req.header('Authorization') ?? '';
+  const token = header.replace(/^Bearer\s+/i, '');
+  const payload = token ? await verifyJwt(c.env, token) : null;
+  if (!payload || payload.role !== 'user') {
+    return c.json({ detail: '请先登录' }, 401);
+  }
+  c.set('user', { id: payload.sub as number, username: payload.username as string });
+  await next();
+}

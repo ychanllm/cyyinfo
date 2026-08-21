@@ -17,3 +17,9 @@ export interface AdminPayload {
 export interface GuestPayload {
   role: 'guest';
 }
+
+export interface UserPayload {
+  sub: number;
+  username: string;
+  role: 'user';
+}
