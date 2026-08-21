@@ -238,4 +238,28 @@ points.post('/prizes/:id/redeem', async (c) => {
   }
 });
 
+// ---- 我的奖品 ----
+points.get('/my/prizes', async (c) => {
+  const me = c.get('user') as { id: number };
+  const isEn = c.req.query('lang') === 'en';
+  const nameCol = isEn ? "COALESCE(NULLIF(p.name_en,''), p.name)" : 'p.name';
+  const descCol = isEn ? "COALESCE(NULLIF(p.description_en,''), p.description)" : 'p.description';
+  const { results } = await c.env.DB.prepare(
+    `SELECT r.id, r.prize_id, r.source, r.points_spent, r.status, r.created_at, r.used_at,
+            ${nameCol} AS name, ${descCol} AS description, p.image
+     FROM prize_records r JOIN prizes p ON p.id = r.prize_id
+     WHERE r.user_id = ? ORDER BY r.id DESC LIMIT 200`
+  ).bind(me.id).all();
+  return c.json(results);
+});
+
+points.post('/my/prizes/:id/use', async (c) => {
+  const me = c.get('user') as { id: number };
+  const r = await c.env.DB.prepare(
+    "UPDATE prize_records SET status = 'used', used_at = datetime('now') WHERE id = ? AND user_id = ? AND status = 'pending'"
+  ).bind(c.req.param('id'), me.id).run();
+  if (!r.meta.changes) return c.json({ detail: '记录不存在或已处理' }, 409);
+  return c.json({ ok: true });
+});
+
 export default points;
