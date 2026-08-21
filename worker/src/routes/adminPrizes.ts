@@ -120,11 +120,13 @@ ap.post('/prize-records/:id/cancel', async (c) => {
     "SELECT id, user_id, points_spent FROM prize_records WHERE id = ? AND status = 'pending'"
   ).bind(c.req.param('id')).first<{ id: number; user_id: number; points_spent: number }>();
   if (!rec) return c.json({ detail: '记录不存在或已处理' }, 409);
-  const [upd] = await c.env.DB.batch([
-    c.env.DB.prepare("UPDATE prize_records SET status = 'cancelled' WHERE id = ? AND status = 'pending'").bind(rec.id),
-    c.env.DB.prepare('UPDATE users SET points = points + ? WHERE id = ?').bind(rec.points_spent, rec.user_id),
-  ]);
+  // 先翻转状态并判断：并发下只有一个请求能成功，杜绝重复退款
+  const upd = await c.env.DB.prepare(
+    "UPDATE prize_records SET status = 'cancelled' WHERE id = ? AND status = 'pending'"
+  ).bind(rec.id).run();
   if (!upd.meta.changes) return c.json({ detail: '记录不存在或已处理' }, 409);
+  await c.env.DB.prepare('UPDATE users SET points = points + ? WHERE id = ?')
+    .bind(rec.points_spent, rec.user_id).run();
   const balance = (await c.env.DB.prepare('SELECT points FROM users WHERE id = ?')
     .bind(rec.user_id).first<{ points: number }>())!.points;
   await c.env.DB.prepare(

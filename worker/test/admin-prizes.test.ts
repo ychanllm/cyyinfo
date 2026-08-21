@@ -95,6 +95,11 @@ describe('核销记录管理', () => {
     // 已取消的不能再核销/取消
     expect((await SELF.fetch(`http://x/api/admin/prize-records/${rid}/use`, { method: 'POST', headers: auth() })).status).toBe(409);
     expect((await SELF.fetch(`http://x/api/admin/prize-records/${rid}/cancel`, { method: 'POST', headers: auth() })).status).toBe(409);
+
+    // 第二次 cancel 不得重复退款
+    expect((await env.DB.prepare('SELECT points FROM users WHERE id = ?').bind(user.id).first<any>())!.points).toBe(150);
+    const txAfter = await env.DB.prepare("SELECT * FROM point_transactions WHERE user_id = ? AND type = 'cancel_refund'").bind(user.id).all();
+    expect(txAfter.results).toHaveLength(1);
   });
 
   it('后台核销 pending 记录', async () => {

@@ -44,10 +44,17 @@ async function request(path, { method = 'GET', body, admin = false, form = null 
       clearAdminToken();
       if (!location.pathname.startsWith(`/${loc}/admin/login`)) location.href = `/${loc}/admin/login`;
     } else {
-      // 访客/用户会话失效：清 token 回门禁页（积分页等由路由守卫另行引导登录）
+      // 访客/用户会话失效：清 token；登录用户回登录页（带上回跳地址），纯访客回门禁页
+      const hadUserToken = Boolean(getUserToken());
       clearGuestToken();
       clearUserToken();
-      if (!location.pathname.startsWith(`/${loc}/gate`)) location.href = `/${loc}/gate`;
+      if (hadUserToken) {
+        if (!location.pathname.startsWith(`/${loc}/login`)) {
+          location.href = `/${loc}/login?redirect=${encodeURIComponent(location.pathname)}`;
+        }
+      } else if (!location.pathname.startsWith(`/${loc}/gate`)) {
+        location.href = `/${loc}/gate`;
+      }
     }
     throw new Error(data.detail || i18n.global.t('api.unauthorized'));
   }
