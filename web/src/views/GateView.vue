@@ -62,6 +62,7 @@ async function submit() {
       <button type="submit" :disabled="loading">{{ loading ? t('gate.verifying') : t('gate.submit') }}</button>
     </form>
     <router-link :to="localize('/admin/login')" class="admin-link">{{ t('gate.adminLink') }}</router-link>
+    <router-link :to="localize('/login')" class="admin-link">{{ t('gate.loginLink') }}</router-link>
   </div>
 </template>
 

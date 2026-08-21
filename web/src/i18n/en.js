@@ -68,6 +68,7 @@ export default {
     submit: 'Enter',
     adminLink: 'Admin login',
     enterPasscode: 'Enter a passcode',
+    loginLink: 'Sign in to check in & earn points',
   },
   board: {
     title: 'Message Board',
@@ -94,6 +95,20 @@ export default {
     badCredentials: 'Incorrect username or password',
     unauthorized: 'Unauthorized',
     requestFailed: 'Request failed ({status})',
+  },
+  userAuth: {
+    title: 'Sign In',
+    loginTab: 'Sign In',
+    registerTab: 'Register',
+    usernamePh: 'Username',
+    passwordPh: 'Password',
+    confirmPasswordPh: 'Confirm password',
+    fillAll: 'Please enter username and password',
+    passwordTooShort: 'Password must be at least 6 characters',
+    passwordMismatch: 'Passwords do not match',
+    submitting: 'Please wait…',
+    needPasscode: 'Registration requires the site passcode first.',
+    goGate: 'Enter passcode',
   },
   admin: {
     brand: 'Admin',

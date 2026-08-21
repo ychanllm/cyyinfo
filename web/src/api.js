@@ -2,6 +2,7 @@ import { i18n } from './i18n';
 
 const GUEST_KEY = 'cyyinfo_guest_token';
 const ADMIN_KEY = 'cyyinfo_admin_token';
+const USER_KEY = 'cyyinfo_user_token';
 
 export const getGuestToken = () => localStorage.getItem(GUEST_KEY) || '';
 export const setGuestToken = (t) => localStorage.setItem(GUEST_KEY, t);
@@ -9,11 +10,14 @@ export const clearGuestToken = () => localStorage.removeItem(GUEST_KEY);
 export const getAdminToken = () => localStorage.getItem(ADMIN_KEY) || '';
 export const setAdminToken = (t) => localStorage.setItem(ADMIN_KEY, t);
 export const clearAdminToken = () => localStorage.removeItem(ADMIN_KEY);
+export const getUserToken = () => localStorage.getItem(USER_KEY) || '';
+export const setUserToken = (t) => localStorage.setItem(USER_KEY, t);
+export const clearUserToken = () => localStorage.removeItem(USER_KEY);
 
 async function request(path, { method = 'GET', body, admin = false, form = null } = {}) {
   const headers = {};
-  // 优先用管理员 token（管理员可免口令浏览公开页）；避免残留的过期访客 token 顶掉有效管理员身份
-  const token = admin ? getAdminToken() : (getAdminToken() || getGuestToken());
+  // 优先用管理员 token（管理员可免口令浏览公开页）；其次登录用户；最后访客口令 token
+  const token = admin ? getAdminToken() : (getAdminToken() || getUserToken() || getGuestToken());
   if (token) headers.Authorization = `Bearer ${token}`;
   let payload;
   if (form) {
@@ -30,7 +34,7 @@ async function request(path, { method = 'GET', body, admin = false, form = null 
   const res = await fetch(url, { method, headers, body: payload });
   const data = await res.json().catch(() => ({}));
   if (res.status === 401) {
-    if (path.endsWith('/admin/login')) {
+    if (path.endsWith('/admin/login') || path.endsWith('/auth/login')) {
       // 登录接口 401 = 账号或密码错误：留在登录页提示，不跳转到门禁页
       throw new Error(data.detail || i18n.global.t('api.badCredentials'));
     }
@@ -40,8 +44,9 @@ async function request(path, { method = 'GET', body, admin = false, form = null 
       clearAdminToken();
       if (!location.pathname.startsWith(`/${loc}/admin/login`)) location.href = `/${loc}/admin/login`;
     } else {
-      // 访客会话失效：回门禁页
+      // 访客/用户会话失效：清 token 回门禁页（积分页等由路由守卫另行引导登录）
       clearGuestToken();
+      clearUserToken();
       if (!location.pathname.startsWith(`/${loc}/gate`)) location.href = `/${loc}/gate`;
     }
     throw new Error(data.detail || i18n.global.t('api.unauthorized'));

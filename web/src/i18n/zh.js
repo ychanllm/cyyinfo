@@ -68,6 +68,7 @@ export default {
     submit: '进入小站',
     adminLink: '管理员入口',
     enterPasscode: '请输入口令',
+    loginLink: '登录账号签到领积分',
   },
   board: {
     title: '留言板',
@@ -94,6 +95,20 @@ export default {
     badCredentials: '账号或密码错误',
     unauthorized: '未授权',
     requestFailed: '请求失败（{status}）',
+  },
+  userAuth: {
+    title: '账号登录',
+    loginTab: '登录',
+    registerTab: '注册',
+    usernamePh: '用户名',
+    passwordPh: '密码',
+    confirmPasswordPh: '确认密码',
+    fillAll: '请填写用户名和密码',
+    passwordTooShort: '密码至少 6 位',
+    passwordMismatch: '两次输入的密码不一致',
+    submitting: '请稍候…',
+    needPasscode: '注册需要先通过访客口令。',
+    goGate: '去输入口令',
   },
   admin: {
     brand: '管理后台',
