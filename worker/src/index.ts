@@ -5,6 +5,7 @@ import adminRoutes from './routes/admin';
 import publicRoutes from './routes/public';
 import usersRoutes from './routes/users';
 import pointsRoutes from './routes/points';
+import adminPrizesRoutes from './routes/adminPrizes';
 import storageRoutes from './routes/storage';
 
 const app = new Hono<{ Bindings: Env }>();
@@ -32,6 +33,7 @@ app.use('*', async (c, next) => {
 app.get('/api/health', (c) => c.json({ ok: true }));
 
 app.route('/api/admin', adminRoutes);
+app.route('/api/admin', adminPrizesRoutes);
 app.route('/api', publicRoutes);
 app.route('/api', usersRoutes);
 app.route('/api', pointsRoutes);
