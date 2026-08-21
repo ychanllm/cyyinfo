@@ -19,6 +19,10 @@ const smtpPort = ref('465');
 const smtpUser = ref('');
 const smtpPass = ref('');
 const defaultRecipient = ref('');
+const checkinBase = ref('10');
+const checkinBonus = ref('5');
+const checkinMax = ref('40');
+const boxCost = ref('100');
 
 const loading = ref(true);
 const saving = ref(false);
@@ -44,6 +48,11 @@ async function loadSettings() {
     smtpUser.value = data.smtp_user || '';
     smtpPass.value = data.smtp_pass || '';
     defaultRecipient.value = data.default_recipient || '';
+    const ck = await api('/admin/checkin-settings', { admin: true });
+    checkinBase.value = ck.checkin_base_points;
+    checkinBonus.value = ck.checkin_streak_bonus;
+    checkinMax.value = ck.checkin_max_points;
+    boxCost.value = ck.box_cost;
   } catch (e) {
     error.value = e.message;
   } finally {
@@ -119,6 +128,29 @@ async function savePasscode() {
     newPasscode.value = '';
     success.value = t('adminSettings.passcodeUpdated');
     await loadSettings();
+  } catch (e) {
+    error.value = e.message;
+  } finally {
+    saving.value = false;
+  }
+}
+
+async function saveCheckin() {
+  saving.value = true;
+  error.value = '';
+  success.value = '';
+  try {
+    await api('/admin/checkin-settings', {
+      method: 'PUT',
+      admin: true,
+      body: {
+        checkin_base_points: Number(checkinBase.value),
+        checkin_streak_bonus: Number(checkinBonus.value),
+        checkin_max_points: Number(checkinMax.value),
+        box_cost: Number(boxCost.value),
+      },
+    });
+    success.value = t('adminSettings.checkinSaved');
   } catch (e) {
     error.value = e.message;
   } finally {
@@ -257,6 +289,31 @@ onMounted(loadSettings);
             <input v-model="defaultRecipient" type="email" placeholder="xxx@qq.com" />
           </label>
           <button type="submit" class="submit-btn" :disabled="saving">{{ saving ? t('adminSettings.saving') : t('adminSettings.save') }}</button>
+        </form>
+      </section>
+
+      <section class="card">
+        <h3>{{ t('adminSettings.checkin') }}</h3>
+        <form class="form" @submit.prevent="saveCheckin">
+          <label class="field">
+            {{ t('adminSettings.checkinBase') }}
+            <input v-model="checkinBase" type="number" min="1" />
+          </label>
+          <label class="field">
+            {{ t('adminSettings.checkinBonus') }}
+            <input v-model="checkinBonus" type="number" min="1" />
+          </label>
+          <label class="field">
+            {{ t('adminSettings.checkinMax') }}
+            <input v-model="checkinMax" type="number" min="1" />
+          </label>
+          <label class="field">
+            {{ t('adminSettings.boxCost') }}
+            <input v-model="boxCost" type="number" min="1" />
+          </label>
+          <button type="submit" class="submit-btn" :disabled="saving">
+            {{ saving ? t('adminSettings.saving') : t('adminSettings.save') }}
+          </button>
         </form>
       </section>
     </template>
