@@ -136,48 +136,58 @@ points.post('/box/draw', async (c) => {
   if (!deduct.meta.changes) return c.json({ detail: '积分不足' }, 400);
   const refund = () => db.prepare('UPDATE users SET points = points + ? WHERE id = ?').bind(boxCost, me.id).run();
 
-  const { results: pool } = await db.prepare(
-    'SELECT * FROM prizes WHERE is_active = 1 AND box_weight > 0 AND stock != 0'
-  ).all<PrizeRow & { is_active: number; sort_order: number }>();
-  if (!pool.length) {
-    await refund();
-    return c.json({ detail: '奖池为空' }, 409);
-  }
+  try {
+    const { results: pool } = await db.prepare(
+      'SELECT * FROM prizes WHERE is_active = 1 AND box_weight > 0 AND stock != 0'
+    ).all<PrizeRow & { is_active: number; sort_order: number }>();
+    if (!pool.length) {
+      await refund();
+      return c.json({ detail: '奖池为空' }, 409);
+    }
 
-  // 按权重加权随机
-  const total = pool.reduce((s, p) => s + p.box_weight, 0);
-  let r = Math.random() * total;
-  let prize = pool[pool.length - 1];
-  for (const p of pool) {
-    r -= p.box_weight;
-    if (r <= 0) { prize = p; break; }
-  }
+    // 按权重加权随机
+    const total = pool.reduce((s, p) => s + p.box_weight, 0);
+    let r = Math.random() * total;
+    let prize = pool[pool.length - 1];
+    for (const p of pool) {
+      r -= p.box_weight;
+      if (r <= 0) { prize = p; break; }
+    }
 
-  // 减库存（有限库存时）+ 写中奖记录，一个批次
-  const stmts = [];
-  if (prize.stock > 0) {
-    stmts.push(db.prepare('UPDATE prizes SET stock = stock - 1 WHERE id = ? AND stock > 0').bind(prize.id));
-  }
-  stmts.push(
-    db.prepare("INSERT INTO prize_records (user_id, prize_id, source, points_spent) VALUES (?, ?, 'box', ?)")
-      .bind(me.id, prize.id, boxCost)
-  );
-  const batchRes = await db.batch(stmts);
-  if (prize.stock > 0 && !batchRes[0].meta.changes) {
-    // 并发下刚好被抽空
-    await refund();
-    return c.json({ detail: '奖品刚被抽完，请再试一次' }, 409);
-  }
-  const recordId = batchRes[batchRes.length - 1].meta.last_row_id;
-  const balance = await balanceOf(db, me.id);
-  await db.prepare(
-    "INSERT INTO point_transactions (user_id, change, balance_after, type, ref_id) VALUES (?, ?, ?, 'box', ?)"
-  ).bind(me.id, -boxCost, balance, recordId).run();
+    // 减库存（有限库存时）+ 写中奖记录，一个批次
+    const stmts = [];
+    if (prize.stock > 0) {
+      stmts.push(db.prepare('UPDATE prizes SET stock = stock - 1 WHERE id = ? AND stock > 0').bind(prize.id));
+    }
+    stmts.push(
+      db.prepare("INSERT INTO prize_records (user_id, prize_id, source, points_spent) VALUES (?, ?, 'box', ?)")
+        .bind(me.id, prize.id, boxCost)
+    );
+    const batchRes = await db.batch(stmts);
+    if (prize.stock > 0 && !batchRes[0].meta.changes) {
+      // 并发下刚好被抽空：删掉同批插入的孤儿记录并退积分
+      const orphanId = batchRes[batchRes.length - 1].meta.last_row_id;
+      await db.batch([
+        db.prepare('DELETE FROM prize_records WHERE id = ?').bind(orphanId),
+        db.prepare('UPDATE users SET points = points + ? WHERE id = ?').bind(boxCost, me.id),
+      ]);
+      return c.json({ detail: '奖品刚被抽完，请再试一次' }, 409);
+    }
+    const recordId = batchRes[batchRes.length - 1].meta.last_row_id;
+    const balance = await balanceOf(db, me.id);
+    await db.prepare(
+      "INSERT INTO point_transactions (user_id, change, balance_after, type, ref_id) VALUES (?, ?, ?, 'box', ?)"
+    ).bind(me.id, -boxCost, balance, recordId).run();
 
-  return c.json({
-    prize: { id: prize.id, name: prize.name, description: prize.description, image: prize.image },
-    balance,
-  });
+    return c.json({
+      prize: { id: prize.id, name: prize.name, description: prize.description, image: prize.image },
+      balance,
+    });
+  } catch (e) {
+    // 兜底：任何意外错误都退积分，避免扣分无记录
+    await refund().catch(() => {});
+    throw e;
+  }
 });
 
 // ---- 兑换 ----
@@ -193,27 +203,39 @@ points.post('/prizes/:id/redeem', async (c) => {
   const deduct = await db.prepare('UPDATE users SET points = points - ? WHERE id = ? AND points >= ?')
     .bind(prize.points_cost, me.id, prize.points_cost).run();
   if (!deduct.meta.changes) return c.json({ detail: '积分不足' }, 400);
+  const refund = () => db.prepare('UPDATE users SET points = points + ? WHERE id = ?').bind(prize.points_cost, me.id).run();
 
-  const stmts = [];
-  if (prize.stock > 0) {
-    stmts.push(db.prepare('UPDATE prizes SET stock = stock - 1 WHERE id = ? AND stock > 0').bind(prize.id));
-  }
-  stmts.push(
-    db.prepare("INSERT INTO prize_records (user_id, prize_id, source, points_spent) VALUES (?, ?, 'redeem', ?)")
-      .bind(me.id, prize.id, prize.points_cost)
-  );
-  const batchRes = await db.batch(stmts);
-  if (prize.stock > 0 && !batchRes[0].meta.changes) {
-    await db.prepare('UPDATE users SET points = points + ? WHERE id = ?').bind(prize.points_cost, me.id).run();
-    return c.json({ detail: '库存不足' }, 409);
-  }
-  const recordId = batchRes[batchRes.length - 1].meta.last_row_id;
-  const balance = await balanceOf(db, me.id);
-  await db.prepare(
-    "INSERT INTO point_transactions (user_id, change, balance_after, type, ref_id) VALUES (?, ?, ?, 'redeem', ?)"
-  ).bind(me.id, -prize.points_cost, balance, recordId).run();
+  try {
+    const stmts = [];
+    if (prize.stock > 0) {
+      stmts.push(db.prepare('UPDATE prizes SET stock = stock - 1 WHERE id = ? AND stock > 0').bind(prize.id));
+    }
+    stmts.push(
+      db.prepare("INSERT INTO prize_records (user_id, prize_id, source, points_spent) VALUES (?, ?, 'redeem', ?)")
+        .bind(me.id, prize.id, prize.points_cost)
+    );
+    const batchRes = await db.batch(stmts);
+    if (prize.stock > 0 && !batchRes[0].meta.changes) {
+      // 并发下刚好被抽空：删掉同批插入的孤儿记录并退积分
+      const orphanId = batchRes[batchRes.length - 1].meta.last_row_id;
+      await db.batch([
+        db.prepare('DELETE FROM prize_records WHERE id = ?').bind(orphanId),
+        db.prepare('UPDATE users SET points = points + ? WHERE id = ?').bind(prize.points_cost, me.id),
+      ]);
+      return c.json({ detail: '库存不足' }, 409);
+    }
+    const recordId = batchRes[batchRes.length - 1].meta.last_row_id;
+    const balance = await balanceOf(db, me.id);
+    await db.prepare(
+      "INSERT INTO point_transactions (user_id, change, balance_after, type, ref_id) VALUES (?, ?, ?, 'redeem', ?)"
+    ).bind(me.id, -prize.points_cost, balance, recordId).run();
 
-  return c.json({ record_id: recordId, balance });
+    return c.json({ record_id: recordId, balance });
+  } catch (e) {
+    // 兜底：任何意外错误都退积分，避免扣分无记录
+    await refund().catch(() => {});
+    throw e;
+  }
 });
 
 export default points;
