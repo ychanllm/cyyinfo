@@ -471,7 +471,7 @@ let user: { id: number; token: string };
 const auth = () => ({ Authorization: `Bearer ${user.token}` });
 
 beforeAll(async () => {
-  user = await registerUser('checkin-user');
+  user = await registerUser('checkin_user');
 });
 
 async function reset() {
@@ -718,7 +718,7 @@ let user: { id: number; token: string };
 const auth = () => ({ Authorization: `Bearer ${user.token}`, 'Content-Type': 'application/json' });
 
 beforeAll(async () => {
-  user = await registerUser('box-user');
+  user = await registerUser('box_user');
 });
 
 async function reset(points: number) {
@@ -1018,8 +1018,8 @@ const authA = () => ({ Authorization: `Bearer ${userA.token}` });
 const authB = () => ({ Authorization: `Bearer ${userB.token}` });
 
 beforeAll(async () => {
-  userA = await registerUser('myprize-a');
-  userB = await registerUser('myprize-b');
+  userA = await registerUser('myprize_a');
+  userB = await registerUser('myprize_b');
 });
 
 async function giveRecord(userId: number, status = 'pending'): Promise<number> {
@@ -1189,7 +1189,7 @@ describe('后台奖品管理', () => {
   it('有记录引用的奖品删除时软删', async () => {
     await cleanup();
     const { id } = await (await createPrize({ name: '大餐', points_cost: 100 })).json() as any;
-    const user = await registerUser('admin-prize-user');
+    const user = await registerUser('admin_prize_user');
     await env.DB.prepare(
       "INSERT INTO prize_records (user_id, prize_id, source, points_spent) VALUES (?, ?, 'redeem', 100)"
     ).bind(user.id, id).run();
@@ -1203,7 +1203,7 @@ describe('后台奖品管理', () => {
 describe('核销记录管理', () => {
   it('列表筛选、后台核销、取消退积分', async () => {
     await cleanup();
-    const user = await registerUser('record-user');
+    const user = await registerUser('record_user');
     await env.DB.prepare('UPDATE users SET points = 0 WHERE id = ?').bind(user.id).run();
     const { id: pid } = await (await createPrize({ name: '电影', points_cost: 150 })).json() as any;
     const rec = await env.DB.prepare(
@@ -1213,7 +1213,7 @@ describe('核销记录管理', () => {
 
     const all = await (await SELF.fetch('http://x/api/admin/prize-records', { headers: auth() })).json() as any[];
     const mine = all.find((r) => r.id === rid);
-    expect(mine).toMatchObject({ username: 'record-user', prize_name: '电影', status: 'pending' });
+    expect(mine).toMatchObject({ username: 'record_user', prize_name: '电影', status: 'pending' });
 
     const filtered = await (await SELF.fetch('http://x/api/admin/prize-records?status=used', { headers: auth() })).json() as any[];
     expect(filtered.find((r) => r.id === rid)).toBeUndefined();
@@ -1234,7 +1234,7 @@ describe('核销记录管理', () => {
 
   it('后台核销 pending 记录', async () => {
     await cleanup();
-    const user = await registerUser('record-user2');
+    const user = await registerUser('record_user2');
     const { id: pid } = await (await createPrize({ name: '拥抱', points_cost: 50 })).json() as any;
     const rec = await env.DB.prepare(
       "INSERT INTO prize_records (user_id, prize_id, source, points_spent) VALUES (?, ?, 'box', 50)"

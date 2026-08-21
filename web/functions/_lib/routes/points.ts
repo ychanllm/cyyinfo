@@ -96,4 +96,124 @@ points.get('/checkin/status', async (c) => {
   });
 });
 
+// ---- 奖品列表（商城 + 盲盒预览），双语惯例：英文为空回退中文 ----
+interface PrizeRow {
+  id: number;
+  name: string;
+  description: string;
+  image: string;
+  points_cost: number;
+  box_weight: number;
+  stock: number;
+}
+
+points.get('/prizes', async (c) => {
+  const isEn = c.req.query('lang') === 'en';
+  const sql = isEn
+    ? `SELECT id, image, points_cost, box_weight, stock,
+              COALESCE(NULLIF(name_en,''), name) AS name,
+              COALESCE(NULLIF(description_en,''), description) AS description
+       FROM prizes WHERE is_active = 1 ORDER BY sort_order, id`
+    : `SELECT id, name, description, image, points_cost, box_weight, stock
+       FROM prizes WHERE is_active = 1 ORDER BY sort_order, id`;
+  const { results } = await c.env.DB.prepare(sql).all<PrizeRow>();
+  return c.json(results.map((p) => ({
+    ...p,
+    in_box: p.box_weight > 0 && p.stock !== 0,
+    in_stock: p.stock !== 0,
+  })));
+});
+
+// ---- 盲盒 ----
+points.post('/box/draw', async (c) => {
+  const me = c.get('user') as { id: number };
+  const db = c.env.DB;
+  const { boxCost } = await checkinConfig(db);
+
+  // 先条件扣积分，余额不足直接失败
+  const deduct = await db.prepare('UPDATE users SET points = points - ? WHERE id = ? AND points >= ?')
+    .bind(boxCost, me.id, boxCost).run();
+  if (!deduct.meta.changes) return c.json({ detail: '积分不足' }, 400);
+  const refund = () => db.prepare('UPDATE users SET points = points + ? WHERE id = ?').bind(boxCost, me.id).run();
+
+  const { results: pool } = await db.prepare(
+    'SELECT * FROM prizes WHERE is_active = 1 AND box_weight > 0 AND stock != 0'
+  ).all<PrizeRow & { is_active: number; sort_order: number }>();
+  if (!pool.length) {
+    await refund();
+    return c.json({ detail: '奖池为空' }, 409);
+  }
+
+  // 按权重加权随机
+  const total = pool.reduce((s, p) => s + p.box_weight, 0);
+  let r = Math.random() * total;
+  let prize = pool[pool.length - 1];
+  for (const p of pool) {
+    r -= p.box_weight;
+    if (r <= 0) { prize = p; break; }
+  }
+
+  // 减库存（有限库存时）+ 写中奖记录，一个批次
+  const stmts = [];
+  if (prize.stock > 0) {
+    stmts.push(db.prepare('UPDATE prizes SET stock = stock - 1 WHERE id = ? AND stock > 0').bind(prize.id));
+  }
+  stmts.push(
+    db.prepare("INSERT INTO prize_records (user_id, prize_id, source, points_spent) VALUES (?, ?, 'box', ?)")
+      .bind(me.id, prize.id, boxCost)
+  );
+  const batchRes = await db.batch(stmts);
+  if (prize.stock > 0 && !batchRes[0].meta.changes) {
+    // 并发下刚好被抽空
+    await refund();
+    return c.json({ detail: '奖品刚被抽完，请再试一次' }, 409);
+  }
+  const recordId = batchRes[batchRes.length - 1].meta.last_row_id;
+  const balance = await balanceOf(db, me.id);
+  await db.prepare(
+    "INSERT INTO point_transactions (user_id, change, balance_after, type, ref_id) VALUES (?, ?, ?, 'box', ?)"
+  ).bind(me.id, -boxCost, balance, recordId).run();
+
+  return c.json({
+    prize: { id: prize.id, name: prize.name, description: prize.description, image: prize.image },
+    balance,
+  });
+});
+
+// ---- 兑换 ----
+points.post('/prizes/:id/redeem', async (c) => {
+  const me = c.get('user') as { id: number };
+  const db = c.env.DB;
+  const prize = await db.prepare('SELECT * FROM prizes WHERE id = ? AND is_active = 1')
+    .bind(c.req.param('id')).first<PrizeRow & { is_active: number }>();
+  if (!prize) return c.json({ detail: '奖品不存在' }, 404);
+  if (prize.points_cost <= 0) return c.json({ detail: '该奖品不可直接兑换' }, 409);
+  if (prize.stock === 0) return c.json({ detail: '库存不足' }, 409);
+
+  const deduct = await db.prepare('UPDATE users SET points = points - ? WHERE id = ? AND points >= ?')
+    .bind(prize.points_cost, me.id, prize.points_cost).run();
+  if (!deduct.meta.changes) return c.json({ detail: '积分不足' }, 400);
+
+  const stmts = [];
+  if (prize.stock > 0) {
+    stmts.push(db.prepare('UPDATE prizes SET stock = stock - 1 WHERE id = ? AND stock > 0').bind(prize.id));
+  }
+  stmts.push(
+    db.prepare("INSERT INTO prize_records (user_id, prize_id, source, points_spent) VALUES (?, ?, 'redeem', ?)")
+      .bind(me.id, prize.id, prize.points_cost)
+  );
+  const batchRes = await db.batch(stmts);
+  if (prize.stock > 0 && !batchRes[0].meta.changes) {
+    await db.prepare('UPDATE users SET points = points + ? WHERE id = ?').bind(prize.points_cost, me.id).run();
+    return c.json({ detail: '库存不足' }, 409);
+  }
+  const recordId = batchRes[batchRes.length - 1].meta.last_row_id;
+  const balance = await balanceOf(db, me.id);
+  await db.prepare(
+    "INSERT INTO point_transactions (user_id, change, balance_after, type, ref_id) VALUES (?, ?, ?, 'redeem', ?)"
+  ).bind(me.id, -prize.points_cost, balance, recordId).run();
+
+  return c.json({ record_id: recordId, balance });
+});
+
 export default points;
