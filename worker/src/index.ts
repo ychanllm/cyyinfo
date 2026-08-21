@@ -4,6 +4,7 @@ import type { Env } from './types';
 import adminRoutes from './routes/admin';
 import publicRoutes from './routes/public';
 import usersRoutes from './routes/users';
+import pointsRoutes from './routes/points';
 import storageRoutes from './routes/storage';
 
 const app = new Hono<{ Bindings: Env }>();
@@ -33,6 +34,7 @@ app.get('/api/health', (c) => c.json({ ok: true }));
 app.route('/api/admin', adminRoutes);
 app.route('/api', publicRoutes);
 app.route('/api', usersRoutes);
+app.route('/api', pointsRoutes);
 app.route('/uploads', storageRoutes);
 
 export default app;
