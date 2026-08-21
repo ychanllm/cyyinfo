@@ -26,6 +26,7 @@ const links = computed(() => [
   { to: localize('/albums'), label: t('nav.albums') },
   { to: localize('/diaries'), label: t('nav.diaries') },
   { to: localize('/music'), label: t('nav.music') },
+  { to: localize('/points'), label: t('nav.points') },
 ]);
 </script>
 
