@@ -892,7 +892,7 @@ points.post('/box/draw', async (c) => {
 
   // 先条件扣积分，余额不足直接失败
   const deduct = await db.prepare('UPDATE users SET points = points - ? WHERE id = ? AND points >= ?')
-    .bind(boxCost, me.id).run();
+    .bind(boxCost, me.id, boxCost).run();
   if (!deduct.meta.changes) return c.json({ detail: '积分不足' }, 400);
   const refund = () => db.prepare('UPDATE users SET points = points + ? WHERE id = ?').bind(boxCost, me.id).run();
 
@@ -951,7 +951,7 @@ points.post('/prizes/:id/redeem', async (c) => {
   if (prize.stock === 0) return c.json({ detail: '库存不足' }, 409);
 
   const deduct = await db.prepare('UPDATE users SET points = points - ? WHERE id = ? AND points >= ?')
-    .bind(prize.points_cost, me.id).run();
+    .bind(prize.points_cost, me.id, prize.points_cost).run();
   if (!deduct.meta.changes) return c.json({ detail: '积分不足' }, 400);
 
   const stmts = [];
