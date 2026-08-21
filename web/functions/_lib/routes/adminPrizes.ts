@@ -120,10 +120,11 @@ ap.post('/prize-records/:id/cancel', async (c) => {
     "SELECT id, user_id, points_spent FROM prize_records WHERE id = ? AND status = 'pending'"
   ).bind(c.req.param('id')).first<{ id: number; user_id: number; points_spent: number }>();
   if (!rec) return c.json({ detail: '记录不存在或已处理' }, 409);
-  await c.env.DB.batch([
-    c.env.DB.prepare("UPDATE prize_records SET status = 'cancelled' WHERE id = ?").bind(rec.id),
+  const [upd] = await c.env.DB.batch([
+    c.env.DB.prepare("UPDATE prize_records SET status = 'cancelled' WHERE id = ? AND status = 'pending'").bind(rec.id),
     c.env.DB.prepare('UPDATE users SET points = points + ? WHERE id = ?').bind(rec.points_spent, rec.user_id),
   ]);
+  if (!upd.meta.changes) return c.json({ detail: '记录不存在或已处理' }, 409);
   const balance = (await c.env.DB.prepare('SELECT points FROM users WHERE id = ?')
     .bind(rec.user_id).first<{ points: number }>())!.points;
   await c.env.DB.prepare(
@@ -150,13 +151,15 @@ ap.get('/checkin-settings', async (c) => {
 
 ap.put('/checkin-settings', async (c) => {
   const body = await c.req.json<Record<string, unknown>>();
+  const writes: [string, string][] = [];
   for (const k of Object.keys(CHECKIN_DEFAULTS)) {
     const v = body[k];
     if (v === undefined) continue;
     const n = Number(v);
     if (!Number.isInteger(n) || n <= 0) return c.json({ detail: `${k} 必须是正整数` }, 400);
-    await setSetting(c.env.DB, k, String(n));
+    writes.push([k, String(n)]);
   }
+  for (const [k, v] of writes) await setSetting(c.env.DB, k, v);
   return c.json({ ok: true });
 });
 

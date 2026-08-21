@@ -136,4 +136,15 @@ describe('签到设置', () => {
 
     await env.DB.prepare("DELETE FROM settings WHERE key IN ('checkin_base_points','checkin_streak_bonus','checkin_max_points','box_cost')").run();
   });
+
+  it('非法值不产生部分写入', async () => {
+    await cleanup();
+    const partial = await SELF.fetch('http://x/api/admin/checkin-settings', {
+      method: 'PUT', headers: auth(), body: JSON.stringify({ checkin_base_points: 20, box_cost: 0 }),
+    });
+    expect(partial.status).toBe(400);
+    const unchanged = await (await SELF.fetch('http://x/api/admin/checkin-settings', { headers: auth() })).json() as any;
+    expect(unchanged.checkin_base_points).toBe('10'); // 仍是默认值，未被部分写入
+    expect(unchanged.box_cost).toBe('100');
+  });
 });
