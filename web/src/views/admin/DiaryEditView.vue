@@ -152,6 +152,97 @@ async function uploadCover(event) {
     uploading.value = false;
   }
 }
+
+// ---- 正文工具栏：插图 / 颜色 / 字号（内嵌 HTML，marked 透传）----
+const taZh = ref(null);
+const taEn = ref(null);
+const imageInput = ref(null);
+
+const TEXT_COLORS = [
+  { key: 'colorDefault', value: '' },
+  { key: '红', value: '#c0392b' },
+  { key: '橙', value: '#e67e22' },
+  { key: '蓝', value: '#2980b9' },
+  { key: '绿', value: '#1e8e4f' },
+  { key: '紫', value: '#8e44ad' },
+];
+const FONT_SIZES = [
+  { key: 'sizeDefault', value: '' },
+  { key: 'sizeSmall', value: '0.85em' },
+  { key: 'sizeLarge', value: '1.25em' },
+  { key: 'sizeXLarge', value: '1.5em' },
+];
+
+function activeTa() {
+  return (contentLang.value === 'en' ? taEn.value : taZh.value);
+}
+function activeModel() {
+  return contentLang.value === 'en' ? contentEn : content;
+}
+
+// 在光标处插入文本（插图用）
+function insertAtCursor(text) {
+  const ta = activeTa();
+  const model = activeModel();
+  if (!ta) { model.value += text; return; }
+  const s = ta.selectionStart ?? model.value.length;
+  model.value = model.value.slice(0, s) + text + model.value.slice(s);
+}
+
+// 选中文字包裹 <span style="...">（颜色/字号用）
+function wrapSelection(style) {
+  const ta = activeTa();
+  const model = activeModel();
+  const s = ta?.selectionStart ?? 0;
+  const e = ta?.selectionEnd ?? 0;
+  if (!ta || s === e) {
+    error.value = t('adminDiaryEdit.selectTextFirst');
+    setTimeout(() => { if (error.value === t('adminDiaryEdit.selectTextFirst')) error.value = ''; }, 2000);
+    return;
+  }
+  const sel = model.value.slice(s, e);
+  model.value = model.value.slice(0, s) + `<span style="${style}">${sel}</span>` + model.value.slice(e);
+}
+
+function pickColor(event) {
+  const value = event.target.value;
+  event.target.value = '';
+  if (!value) return; // 「默认」不包 span，保持原文
+  wrapSelection(`color:${value}`);
+}
+function pickSize(event) {
+  const value = event.target.value;
+  event.target.value = '';
+  if (!value) return;
+  wrapSelection(`font-size:${value}`);
+}
+
+function triggerImage() {
+  if (!isEdit.value) {
+    error.value = t('adminDiaryEdit.imageEditOnly');
+    setTimeout(() => { if (error.value === t('adminDiaryEdit.imageEditOnly')) error.value = ''; }, 2000);
+    return;
+  }
+  imageInput.value?.click();
+}
+
+async function uploadInlineImage(event) {
+  const file = event.target.files?.[0];
+  event.target.value = '';
+  if (!file || !isEdit.value) return;
+  uploading.value = true;
+  error.value = '';
+  try {
+    const form = new FormData();
+    form.append('file', file);
+    const r = await apiUpload(`/admin/diaries/${diaryId.value}/images`, form);
+    insertAtCursor(`\n<p align="center"><img src="${r.url}" alt=""></p>\n`);
+  } catch (e) {
+    error.value = e.message;
+  } finally {
+    uploading.value = false;
+  }
+}
 </script>
 
 <template>
@@ -207,6 +298,20 @@ async function uploadCover(event) {
         <div class="field content-field">
           <div class="content-head">
             <span class="label">{{ t('adminDiaryEdit.content') }}</span>
+            <div class="editor-tools">
+              <button type="button" class="tool-btn" :disabled="uploading" @click="triggerImage">
+                {{ uploading ? t('adminDiaryEdit.uploading') : t('adminDiaryEdit.insertImage') }}
+              </button>
+              <select class="tool-select" :title="t('adminDiaryEdit.textColor')" @change="pickColor">
+                <option value="">{{ t('adminDiaryEdit.textColor') }}</option>
+                <option v-for="c in TEXT_COLORS.slice(1)" :key="c.value" :value="c.value">{{ c.key }}</option>
+              </select>
+              <select class="tool-select" :title="t('adminDiaryEdit.fontSize')" @change="pickSize">
+                <option value="">{{ t('adminDiaryEdit.fontSize') }}</option>
+                <option v-for="s in FONT_SIZES.slice(1)" :key="s.value" :value="s.value">{{ t(`adminDiaryEdit.${s.key}`) }}</option>
+              </select>
+              <input ref="imageInput" type="file" accept="image/*" class="file-input" @change="uploadInlineImage" />
+            </div>
             <div class="lang-tabs">
               <button type="button" :class="{ active: contentLang === 'zh' }" @click="contentLang = 'zh'">{{ t('adminDiaryEdit.zh') }}</button>
               <button type="button" :class="{ active: contentLang === 'en' }" @click="contentLang = 'en'">{{ t('adminDiaryEdit.en') }}</button>
@@ -214,11 +319,13 @@ async function uploadCover(event) {
           </div>
           <textarea
             v-if="contentLang === 'zh'"
+            ref="taZh"
             v-model="content"
             :placeholder="t('adminDiaryEdit.contentPlaceholder')"
           ></textarea>
           <textarea
             v-else
+            ref="taEn"
             v-model="contentEn"
             :placeholder="t('adminDiaryEdit.contentPlaceholderEn')"
           ></textarea>
@@ -385,6 +492,28 @@ async function uploadCover(event) {
   background: var(--color-primary);
   border-color: var(--color-primary);
   color: #fff;
+}
+.editor-tools {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  margin-right: 8px;
+}
+.tool-btn,
+.tool-select {
+  border: 1px solid var(--color-border);
+  background: #fff;
+  border-radius: 6px;
+  padding: 2px 10px;
+  font-size: 12px;
+  color: var(--color-text-light);
+  cursor: pointer;
+}
+.tool-btn:hover,
+.tool-select:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
 }
 .cover-row {
   display: flex;
