@@ -8,7 +8,9 @@ import pointsRoutes from './routes/points';
 import adminPrizesRoutes from './routes/adminPrizes';
 import storageRoutes from './routes/storage';
 
-const app = new Hono<{ Bindings: Env }>();
+// Hono 实例自带 fetch 方法：Worker（wrangler deploy / miniflare 测试）用 export default，
+// Pages Functions 用 hono/cloudflare-pages 的 handle(app)，两种部署形态共用同一份代码
+export const app = new Hono<{ Bindings: Env }>();
 
 const ALLOWED_ORIGINS = [
   'http://localhost:5173',

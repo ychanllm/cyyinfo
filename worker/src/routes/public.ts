@@ -4,15 +4,31 @@ import type { Env } from '../types';
 import { signJwt } from '../auth';
 import { rateLimit, clientIp } from '../security';
 import { contentGuard, getSetting } from '../guard';
+import { sendEmail } from '../smtp';
 
 const pub = new Hono<{ Bindings: Env }>();
 
+// 公开内容按 ?lang= 返回对应语言（默认中文），英文为空时回退中文
+function localized(c: { req: { query: (k: string) => string | undefined } }): 'en' | 'zh' {
+  return c.req.query('lang') === 'en' ? 'en' : 'zh';
+}
+
 pub.get('/site/status', async (c) => {
   const hash = await getSetting(c.env.DB, 'site_passcode_hash');
+  const isEn = localized(c) === 'en';
+  const siteName = await getSetting(c.env.DB, 'site_name');
+  const siteNameEn = await getSetting(c.env.DB, 'site_name_en');
+  const heroLabel = await getSetting(c.env.DB, 'hero_label');
+  const heroLabelEn = await getSetting(c.env.DB, 'hero_label_en');
+  const heroTitle = await getSetting(c.env.DB, 'hero_title');
+  const heroTitleEn = await getSetting(c.env.DB, 'hero_title_en');
   return c.json({
-    site_name: await getSetting(c.env.DB, 'site_name'),
+    site_name: isEn ? (siteNameEn || siteName) : siteName,
     anniversary_date: await getSetting(c.env.DB, 'anniversary_date'),
     passcode_enabled: Boolean(hash),
+    background_color: await getSetting(c.env.DB, 'background_color'),
+    hero_label: isEn ? (heroLabelEn || heroLabel) : heroLabel,
+    hero_title: isEn ? (heroTitleEn || heroTitle) : heroTitle,
   });
 });
 
@@ -30,58 +46,169 @@ pub.post('/passcode/verify', async (c) => {
   return c.json({ token });
 });
 
+// 定时任务触发：查询到点未发送的提醒并发送邮件（用 x-reminder-token 鉴权）
+pub.post('/reminders/check', async (c) => {
+  const token = c.req.header('x-reminder-token');
+  if (!c.env.REMINDER_TOKEN || token !== c.env.REMINDER_TOKEN) {
+    return c.json({ detail: '未授权' }, 401);
+  }
+  // 当前中国时区(UTC+8)时间，与前端 datetime-local 存储的 send_at 对齐
+  const now = new Date(Date.now() + 8 * 3600 * 1000);
+  const p = (n: number) => String(n).padStart(2, '0');
+  const nowStr = `${now.getUTCFullYear()}-${p(now.getUTCMonth() + 1)}-${p(now.getUTCDate())} `
+    + `${p(now.getUTCHours())}:${p(now.getUTCMinutes())}:${p(now.getUTCSeconds())}`;
+
+  const { results: due } = await c.env.DB.prepare(
+    'SELECT * FROM reminders WHERE status = ? AND send_at <= ? ORDER BY send_at'
+  ).bind('pending', nowStr).all();
+
+  const smtp = {
+    host: (await getSetting(c.env.DB, 'smtp_host')) || 'smtp.qq.com',
+    port: Number((await getSetting(c.env.DB, 'smtp_port')) || 465),
+    user: await getSetting(c.env.DB, 'smtp_user'),
+    pass: await getSetting(c.env.DB, 'smtp_pass'),
+    from: await getSetting(c.env.DB, 'smtp_user'),
+  };
+  const defaultRecipient = await getSetting(c.env.DB, 'default_recipient');
+
+  let sent = 0;
+  for (const r of due) {
+    const to = r.recipient || defaultRecipient;
+    if (!to || !smtp.user || !smtp.pass) {
+      await c.env.DB.prepare("UPDATE reminders SET status='failed', error='SMTP 未配置', updated_at=datetime('now') WHERE id=?")
+        .bind(r.id).run();
+      continue;
+    }
+    try {
+      await sendEmail(smtp, to, `提醒：${r.title}`, r.content || r.title);
+      await c.env.DB.prepare("UPDATE reminders SET status='sent', error='', updated_at=datetime('now') WHERE id=?")
+        .bind(r.id).run();
+      sent++;
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      await c.env.DB.prepare("UPDATE reminders SET status='failed', error=?, updated_at=datetime('now') WHERE id=?")
+        .bind(msg, r.id).run();
+    }
+  }
+  return c.json({ checked: due.length, sent, failed: due.length - sent });
+});
+
 // 内容接口挂在 contentGuard 之后（后续任务在此追加路由）
 const content = new Hono<{ Bindings: Env }>();
 content.use('*', contentGuard);
 content.get('/albums', async (c) => {
-  const { results } = await c.env.DB.prepare(
-    'SELECT a.*, p.filename AS cover_filename FROM albums a LEFT JOIN photos p ON p.id = a.cover_photo_id ORDER BY a.sort_order, a.id'
-  ).all();
+  const isEn = localized(c) === 'en';
+  const sql = isEn
+    ? `SELECT a.id, a.sort_order, a.created_at, a.cover_photo_id,
+              COALESCE(NULLIF(a.title_en,''), a.title) AS title,
+              COALESCE(NULLIF(a.description_en,''), a.description) AS description,
+              p.filename AS cover_filename
+       FROM albums a LEFT JOIN photos p ON p.id = a.cover_photo_id
+       ORDER BY a.sort_order, a.id`
+    : 'SELECT a.*, p.filename AS cover_filename FROM albums a LEFT JOIN photos p ON p.id = a.cover_photo_id ORDER BY a.sort_order, a.id';
+  const { results } = await c.env.DB.prepare(sql).all();
   return c.json(results);
 });
 
 content.get('/albums/:id', async (c) => {
-  const album = await c.env.DB.prepare(
-    'SELECT a.*, p.filename AS cover_filename FROM albums a LEFT JOIN photos p ON p.id = a.cover_photo_id WHERE a.id = ?'
-  ).bind(c.req.param('id')).first();
+  const isEn = localized(c) === 'en';
+  const albumSql = isEn
+    ? `SELECT a.id, a.sort_order, a.created_at, a.cover_photo_id,
+              COALESCE(NULLIF(a.title_en,''), a.title) AS title,
+              COALESCE(NULLIF(a.description_en,''), a.description) AS description,
+              p.filename AS cover_filename
+       FROM albums a LEFT JOIN photos p ON p.id = a.cover_photo_id WHERE a.id = ?`
+    : 'SELECT a.*, p.filename AS cover_filename FROM albums a LEFT JOIN photos p ON p.id = a.cover_photo_id WHERE a.id = ?';
+  const album = await c.env.DB.prepare(albumSql).bind(c.req.param('id')).first();
   if (!album) return c.json({ detail: '相册不存在' }, 404);
-  const { results: photos } = await c.env.DB.prepare(
-    'SELECT id, filename, caption, taken_at, sort_order FROM photos WHERE album_id = ? ORDER BY sort_order, id'
-  ).bind(c.req.param('id')).all();
+  const photosSql = isEn
+    ? 'SELECT id, filename, taken_at, sort_order, COALESCE(NULLIF(caption_en,\'\'), caption) AS caption FROM photos WHERE album_id = ? ORDER BY sort_order, id'
+    : 'SELECT id, filename, caption, taken_at, sort_order FROM photos WHERE album_id = ? ORDER BY sort_order, id';
+  const { results: photos } = await c.env.DB.prepare(photosSql).bind(c.req.param('id')).all();
   return c.json({ ...album, photos });
 });
 
 content.get('/diaries', async (c) => {
+  const isEn = localized(c) === 'en';
   const page = Math.max(1, Number(c.req.query('page')) || 1);
   const size = 10;
-  const total = await c.env.DB.prepare("SELECT COUNT(*) AS n FROM diaries WHERE status = 'published'")
-    .first<{ n: number }>();
-  const { results } = await c.env.DB.prepare(
-    `SELECT d.id, d.title, d.slug, d.cover_filename, d.published_at, u.display_name AS author,
-            substr(d.content_md, 1, 200) AS excerpt
-     FROM diaries d JOIN admin_users u ON u.id = d.author_id
-     WHERE d.status = 'published' ORDER BY d.published_at DESC LIMIT ? OFFSET ?`
-  ).bind(size, (page - 1) * size).all();
+  // 分类筛选：category 为正整数时按分类过滤，非法/空则忽略
+  const catRaw = c.req.query('category');
+  const catId = catRaw !== undefined && catRaw !== '' ? Number(catRaw) : NaN;
+  const categorySql = Number.isInteger(catId) && catId > 0 ? 'AND d.category_id = ?' : '';
+  const catArgs = categorySql ? [catId] : [];
+  const total = await c.env.DB.prepare(
+    `SELECT COUNT(*) AS n FROM diaries d WHERE d.status = 'published' ${categorySql}`
+  ).bind(...catArgs).first<{ n: number }>();
+  const listSql = isEn
+    ? `SELECT d.id, d.slug, d.cover_filename, d.published_at, u.display_name AS author,
+              c.id AS category_id, COALESCE(NULLIF(c.name_en,''), c.name) AS category_name,
+              COALESCE(NULLIF(d.title_en,''), d.title) AS title,
+              substr(COALESCE(NULLIF(d.content_md_en,''), d.content_md), 1, 200) AS excerpt
+       FROM diaries d JOIN admin_users u ON u.id = d.author_id
+       LEFT JOIN diary_categories c ON c.id = d.category_id
+       WHERE d.status = 'published' ${categorySql}
+       ORDER BY d.published_at DESC LIMIT ? OFFSET ?`
+    : `SELECT d.id, d.title, d.slug, d.cover_filename, d.published_at, u.display_name AS author,
+              c.id AS category_id, c.name AS category_name,
+              substr(d.content_md, 1, 200) AS excerpt
+       FROM diaries d JOIN admin_users u ON u.id = d.author_id
+       LEFT JOIN diary_categories c ON c.id = d.category_id
+       WHERE d.status = 'published' ${categorySql}
+       ORDER BY d.published_at DESC LIMIT ? OFFSET ?`;
+  const { results } = await c.env.DB.prepare(listSql).bind(...catArgs, size, (page - 1) * size).all();
   return c.json({ items: results, total: total?.n ?? 0 });
 });
 
+// 分类列表（供前台筛选 chips，含已发布日记数）
+content.get('/diary-categories', async (c) => {
+  const isEn = localized(c) === 'en';
+  const sql = isEn
+    ? `SELECT c.id, COALESCE(NULLIF(c.name_en,''), c.name) AS name, c.sort_order, COUNT(d.id) AS count
+       FROM diary_categories c
+       LEFT JOIN diaries d ON d.category_id = c.id AND d.status = 'published'
+       GROUP BY c.id ORDER BY c.sort_order, c.id`
+    : `SELECT c.id, c.name, c.sort_order, COUNT(d.id) AS count
+       FROM diary_categories c
+       LEFT JOIN diaries d ON d.category_id = c.id AND d.status = 'published'
+       GROUP BY c.id ORDER BY c.sort_order, c.id`;
+  const { results } = await c.env.DB.prepare(sql).all();
+  return c.json(results);
+});
+
 content.get('/diaries/:slugOrId', async (c) => {
+  const isEn = localized(c) === 'en';
   const key = c.req.param('slugOrId');
   const isId = /^\d+$/.test(key);
-  const d = await c.env.DB.prepare(
-    `SELECT d.id, d.title, d.slug, d.content_md, d.cover_filename, d.published_at, u.display_name AS author
-     FROM diaries d JOIN admin_users u ON u.id = d.author_id
-     WHERE d.status = 'published' AND ${isId ? 'd.id = ?' : 'd.slug = ?'}`
-  ).bind(key).first();
+  const sql = isEn
+    ? `SELECT d.id, d.slug, d.cover_filename, d.published_at, u.display_name AS author,
+              c.id AS category_id, COALESCE(NULLIF(c.name_en,''), c.name) AS category_name,
+              COALESCE(NULLIF(d.title_en,''), d.title) AS title,
+              COALESCE(NULLIF(d.content_md_en,''), d.content_md) AS content_md
+       FROM diaries d JOIN admin_users u ON u.id = d.author_id
+       LEFT JOIN diary_categories c ON c.id = d.category_id
+       WHERE d.status = 'published' AND ${isId ? 'd.id = ?' : 'd.slug = ?'}`
+    : `SELECT d.id, d.title, d.slug, d.content_md, d.cover_filename, d.published_at, u.display_name AS author,
+              c.id AS category_id, c.name AS category_name
+       FROM diaries d JOIN admin_users u ON u.id = d.author_id
+       LEFT JOIN diary_categories c ON c.id = d.category_id
+       WHERE d.status = 'published' AND ${isId ? 'd.id = ?' : 'd.slug = ?'}`;
+  const d = await c.env.DB.prepare(sql).bind(key).first();
   if (!d) return c.json({ detail: '文章不存在' }, 404);
   return c.json(d);
 });
 
 content.get('/music/albums', async (c) => {
-  const { results } = await c.env.DB.prepare(
-    `SELECT m.*, COUNT(s.id) AS song_count FROM music_albums m
-     LEFT JOIN songs s ON s.album_id = m.id GROUP BY m.id ORDER BY m.sort_order, m.id`
-  ).all();
+  const isEn = localized(c) === 'en';
+  const sql = isEn
+    ? `SELECT m.id, m.cover_filename, m.year, m.sort_order,
+              COALESCE(NULLIF(m.title_en,''), m.title) AS title,
+              COUNT(s.id) AS song_count
+       FROM music_albums m LEFT JOIN songs s ON s.album_id = m.id
+       GROUP BY m.id ORDER BY m.sort_order, m.id`
+    : `SELECT m.*, COUNT(s.id) AS song_count FROM music_albums m
+       LEFT JOIN songs s ON s.album_id = m.id GROUP BY m.id ORDER BY m.sort_order, m.id`;
+  const { results } = await c.env.DB.prepare(sql).all();
   return c.json(results);
 });
 
@@ -121,12 +248,16 @@ content.post('/messages', async (c) => {
 });
 
 content.get('/music/albums/:id', async (c) => {
-  const album = await c.env.DB.prepare('SELECT * FROM music_albums WHERE id = ?')
-    .bind(c.req.param('id')).first();
+  const isEn = localized(c) === 'en';
+  const albumSql = isEn
+    ? 'SELECT id, sort_order, cover_filename, year, COALESCE(NULLIF(title_en,\'\'), title) AS title FROM music_albums WHERE id = ?'
+    : 'SELECT * FROM music_albums WHERE id = ?';
+  const album = await c.env.DB.prepare(albumSql).bind(c.req.param('id')).first();
   if (!album) return c.json({ detail: '专辑不存在' }, 404);
-  const { results: songs } = await c.env.DB.prepare(
-    'SELECT id, title, track_no, filename, duration FROM songs WHERE album_id = ? ORDER BY track_no, id'
-  ).bind(c.req.param('id')).all();
+  const songsSql = isEn
+    ? 'SELECT id, track_no, filename, duration, COALESCE(NULLIF(title_en,\'\'), title) AS title FROM songs WHERE album_id = ? ORDER BY track_no, id'
+    : 'SELECT id, title, track_no, filename, duration FROM songs WHERE album_id = ? ORDER BY track_no, id';
+  const { results: songs } = await c.env.DB.prepare(songsSql).bind(c.req.param('id')).all();
   return c.json({ ...album, songs });
 });
 
