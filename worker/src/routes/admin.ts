@@ -417,6 +417,18 @@ admin.post('/diaries/:id/cover', async (c) => {
   return c.json({ cover_filename: key });
 });
 
+// 日记正文插图：存 R2 diary/ 前缀，返回可直接写进 markdown 的 url（不落库，正文保存时自然包含）
+admin.post('/diaries/:id/images', async (c) => {
+  const exists = await c.env.DB.prepare('SELECT id FROM diaries WHERE id = ?').bind(c.req.param('id')).first();
+  if (!exists) return c.json({ detail: '日记不存在' }, 404);
+  const body = await c.req.parseBody();
+  const file = body.file;
+  if (!(file instanceof File)) return c.json({ detail: '缺少文件' }, 400);
+  const { key, error } = await saveUpload(c.env, file, 'image', 'diary');
+  if (error) return c.json({ detail: error }, 400);
+  return c.json({ url: `/uploads/${key}` });
+});
+
 // ---- 日记分类 ----
 admin.get('/diary-categories', async (c) => {
   const { results } = await c.env.DB.prepare(

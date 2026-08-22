@@ -84,3 +84,45 @@ describe('日记', () => {
     expect(await bad.json()).toEqual(await p1.json());
   });
 });
+
+describe('日记正文图片', () => {
+  it('上传成功返回 /uploads/diary/ url；非图片 400；未授权 401；不存在 404', async () => {
+    const token = await adminToken();
+    const authH = { Authorization: `Bearer ${token}` };
+    // 建一篇日记
+    const create = await SELF.fetch('http://x/api/admin/diaries', {
+      method: 'POST',
+      headers: { ...authH, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: '插图测试' }),
+    });
+    const { id } = await create.json() as any;
+
+    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    const form = new FormData();
+    form.append('file', new File([png], 'a.png', { type: 'image/png' }));
+    const up = await SELF.fetch(`http://x/api/admin/diaries/${id}/images`, { method: 'POST', headers: authH, body: form });
+    expect(up.status).toBe(200);
+    const { url } = await up.json() as any;
+    expect(url).toMatch(/^\/uploads\/diary\/.+\.png$/);
+
+    // 文件可访问
+    const img = await SELF.fetch(`http://x${url}`);
+    expect(img.status).toBe(200);
+
+    // 非图片
+    const bad = new FormData();
+    bad.append('file', new File(['hello'], 'a.txt', { type: 'text/plain' }));
+    const badRes = await SELF.fetch(`http://x/api/admin/diaries/${id}/images`, { method: 'POST', headers: authH, body: bad });
+    expect(badRes.status).toBe(400);
+
+    // 未授权
+    const anon = await SELF.fetch(`http://x/api/admin/diaries/${id}/images`, { method: 'POST', body: form });
+    expect(anon.status).toBe(401);
+
+    // 日记不存在
+    const form2 = new FormData();
+    form2.append('file', new File([png], 'b.png', { type: 'image/png' }));
+    const missing = await SELF.fetch('http://x/api/admin/diaries/999999/images', { method: 'POST', headers: authH, body: form2 });
+    expect(missing.status).toBe(404);
+  });
+});
