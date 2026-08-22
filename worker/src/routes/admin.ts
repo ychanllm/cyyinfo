@@ -68,6 +68,7 @@ admin.use('/reminders/*', adminAuth);
 admin.use('/changelogs', adminAuth);
 admin.use('/changelogs/*', adminAuth);
 admin.use('/audit-logs', adminAuth);
+admin.use('/stats', adminAuth);
 
 // ---- 账号管理 ----
 admin.get('/users', async (c) => {
@@ -686,6 +687,32 @@ admin.get('/audit-logs', async (c) => {
     'SELECT * FROM audit_logs ORDER BY id DESC LIMIT 100'
   ).all();
   return c.json(results);
+});
+
+// 后台统计：站点总览 + 用户维度汇总（likes 为连赞总次数 SUM(count)）
+admin.get('/stats', async (c) => {
+  const db = c.env.DB;
+  const one = async (sql: string): Promise<number> =>
+    (await db.prepare(sql).first<{ n: number }>())?.n ?? 0;
+  const overview = {
+    users: await one('SELECT COUNT(*) AS n FROM users'),
+    likes: await one('SELECT COALESCE(SUM(count), 0) AS n FROM likes'),
+    views: await one('SELECT COALESCE(SUM(count), 0) AS n FROM view_counts'),
+    messages: await one('SELECT COUNT(*) AS n FROM messages'),
+    photos: await one('SELECT COUNT(*) AS n FROM photos'),
+    albums: await one('SELECT COUNT(*) AS n FROM albums'),
+    diaries: await one('SELECT COUNT(*) AS n FROM diaries'),
+  };
+  const { results: users } = await db.prepare(
+    `SELECT u.id, u.username, u.avatar, u.created_at, u.points,
+            COALESCE(c.checkins, 0) AS checkins,
+            COALESCE(l.likes, 0) AS likes
+     FROM users u
+     LEFT JOIN (SELECT user_id, COUNT(*) AS checkins FROM checkins GROUP BY user_id) c ON c.user_id = u.id
+     LEFT JOIN (SELECT user_id, SUM(count) AS likes FROM likes GROUP BY user_id) l ON l.user_id = u.id
+     ORDER BY u.created_at DESC`
+  ).all();
+  return c.json({ overview, users });
 });
 
 export default admin;
