@@ -1,6 +1,7 @@
 <script setup>
 import { onMounted, onUnmounted, reactive, ref, watch } from 'vue';
 import { i18n } from '../i18n';
+import { state as playerState } from '../player';
 
 const wrap = ref(null);
 const bubble = ref(null);
@@ -13,6 +14,13 @@ let suppressClick = false;
 let unmounted = false;
 // 移动端（coarse）只点不拖
 const canDrag = window.matchMedia('(pointer: fine)').matches;
+const isMobile = window.matchMedia('(max-width: 768px)').matches;
+// MiniPlayer 固定底栏（移动端高约 57px）+ 间隙，移动端需为桌宠预留
+const PLAYER_CLEARANCE = 72;
+
+function bottomMargin() {
+  return isMobile && playerState.queue.length ? 24 + PLAYER_CLEARANCE : 24;
+}
 
 function onPointerDown(e) {
   if (!canDrag || e.button !== 0) return;
@@ -76,8 +84,17 @@ async function mountPet() {
 
 onMounted(async () => {
   pos.x = window.innerWidth - wrap.value.offsetWidth - 24;
-  pos.y = window.innerHeight - wrap.value.offsetHeight - 24;
+  pos.y = window.innerHeight - wrap.value.offsetHeight - bottomMargin();
   await mountPet();
+});
+
+// 音乐队列异步加载，MiniPlayer 出现（或消失）后移动端桌宠自动让位/回落
+watch(() => playerState.queue.length, (len) => {
+  if (!isMobile || !wrap.value) return;
+  const rect = wrap.value.getBoundingClientRect();
+  const limit = window.innerHeight - rect.height - bottomMargin();
+  if (len && pos.y > limit) pos.y = limit;
+  if (!len) pos.y = limit;
 });
 
 // 切换语言时用对应语言的皮肤重建桌宠

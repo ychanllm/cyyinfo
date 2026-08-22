@@ -58,6 +58,8 @@ admin.use('/messages', adminAuth);
 admin.use('/messages/*', adminAuth);
 admin.use('/settings', adminAuth);
 admin.use('/settings/*', adminAuth);
+admin.use('/site-users', adminAuth);
+admin.use('/site-users/*', adminAuth);
 
 // ---- 账号管理 ----
 admin.get('/users', async (c) => {
@@ -94,6 +96,49 @@ admin.delete('/users/:id', async (c) => {
   if ((count?.n ?? 0) <= 1) return c.json({ detail: '至少保留一个账号' }, 400);
   await c.env.DB.prepare('DELETE FROM admin_users WHERE id = ?').bind(targetId).run();
   return c.json({ ok: true });
+});
+
+// ---- 注册用户管理（users 表，区别于上面的管理员账号）----
+admin.get('/site-users', async (c) => {
+  const { results } = await c.env.DB.prepare(
+    'SELECT id, username, points, created_at FROM users ORDER BY id'
+  ).all();
+  return c.json(results);
+});
+
+admin.put('/site-users/:id', async (c) => {
+  const { password } = await c.req.json<{ password?: string }>();
+  if (!password || password.length < 6) return c.json({ detail: '密码至少 6 位' }, 400);
+  const r = await c.env.DB.prepare('UPDATE users SET password_hash = ? WHERE id = ?')
+    .bind(bcrypt.hashSync(password, 10), Number(c.req.param('id'))).run();
+  if (!r.meta.changes) return c.json({ detail: '用户不存在' }, 404);
+  return c.json({ ok: true });
+});
+
+admin.get('/site-users/:id/checkins', async (c) => {
+  const userId = Number(c.req.param('id'));
+  const user = await c.env.DB.prepare('SELECT id FROM users WHERE id = ?').bind(userId).first();
+  if (!user) return c.json({ detail: '用户不存在' }, 404);
+  const { results } = await c.env.DB.prepare(
+    'SELECT id, checkin_date, streak_day, points_earned, created_at FROM checkins WHERE user_id = ? ORDER BY id DESC LIMIT 200'
+  ).bind(userId).all();
+  return c.json(results);
+});
+
+// 积分流水：box/redeem/cancel_refund 的 ref_id 指向 prize_records，联表带上奖品名
+admin.get('/site-users/:id/point-transactions', async (c) => {
+  const userId = Number(c.req.param('id'));
+  const user = await c.env.DB.prepare('SELECT id FROM users WHERE id = ?').bind(userId).first();
+  if (!user) return c.json({ detail: '用户不存在' }, 404);
+  const { results } = await c.env.DB.prepare(
+    `SELECT t.id, t.change, t.balance_after, t.type, t.ref_id, t.created_at,
+            p.name AS prize_name, p.name_en AS prize_name_en
+     FROM point_transactions t
+     LEFT JOIN prize_records r ON r.id = t.ref_id AND t.type IN ('box', 'redeem', 'cancel_refund')
+     LEFT JOIN prizes p ON p.id = r.prize_id
+     WHERE t.user_id = ? ORDER BY t.id DESC LIMIT 200`
+  ).bind(userId).all();
+  return c.json(results);
 });
 
 // ---- 站点设置 ----

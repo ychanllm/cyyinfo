@@ -3,7 +3,7 @@ import { ref, onMounted } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { api } from '../../api';
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
 const users = ref([]);
 const loading = ref(true);
 const error = ref('');
@@ -86,7 +86,87 @@ function fmtTime(s) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
-onMounted(loadUsers);
+function fmtDateTime(s) {
+  if (!s) return '—';
+  const d = new Date(s.endsWith('Z') || s.includes('+') ? s : `${s.replace(' ', 'T')}Z`);
+  if (Number.isNaN(d.getTime())) return s;
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${fmtTime(s)} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+// ---- 注册用户（前台注册的 users 表账号）----
+const siteUsers = ref([]);
+const siteUsersLoading = ref(true);
+const expandedId = ref(0);
+const detail = ref({ loading: false, checkins: [], transactions: [] });
+
+async function loadSiteUsers() {
+  siteUsersLoading.value = true;
+  try {
+    siteUsers.value = await api('/admin/site-users', { admin: true });
+  } catch (e) {
+    error.value = e.message;
+  } finally {
+    siteUsersLoading.value = false;
+  }
+}
+
+async function saveSiteUserPassword(u) {
+  if (!u._newPassword || u._newPassword.length < 6) {
+    error.value = t('adminUsers.passwordTooShort');
+    return;
+  }
+  error.value = '';
+  try {
+    await api(`/admin/site-users/${u.id}`, {
+      method: 'PUT',
+      admin: true,
+      body: { password: u._newPassword },
+    });
+    u._newPassword = '';
+  } catch (e) {
+    error.value = e.message;
+  }
+}
+
+async function toggleDetail(u) {
+  if (expandedId.value === u.id) {
+    expandedId.value = 0;
+    return;
+  }
+  expandedId.value = u.id;
+  detail.value = { loading: true, checkins: [], transactions: [] };
+  error.value = '';
+  try {
+    const [checkins, transactions] = await Promise.all([
+      api(`/admin/site-users/${u.id}/checkins`, { admin: true }),
+      api(`/admin/site-users/${u.id}/point-transactions`, { admin: true }),
+    ]);
+    detail.value = { loading: false, checkins, transactions };
+  } catch (e) {
+    error.value = e.message;
+    expandedId.value = 0;
+  }
+}
+
+const TX_TYPE_KEYS = {
+  checkin: 'typeCheckin',
+  box: 'typeBox',
+  redeem: 'typeRedeem',
+  cancel_refund: 'typeCancelRefund',
+};
+
+function txReason(tx) {
+  const base = t(`adminUsers.${TX_TYPE_KEYS[tx.type] ?? 'typeOther'}`);
+  if (tx.type === 'checkin') return base;
+  const prize = locale.value === 'en' ? (tx.prize_name_en || tx.prize_name) : tx.prize_name;
+  return prize ? `${base}：${prize}` : base;
+}
+
+onMounted(() => {
+  loadUsers();
+  loadSiteUsers();
+});
 </script>
 
 <template>
@@ -126,6 +206,83 @@ onMounted(loadUsers);
             <td class="col-actions">
               <button class="btn" @click="saveUser(user)">{{ t('adminUsers.save') }}</button>
               <button class="btn danger" @click="removeUser(user)">{{ t('adminUsers.delete') }}</button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+    <section class="card">
+      <h3>{{ t('adminUsers.siteUsers') }}</h3>
+      <p v-if="siteUsersLoading" class="hint">{{ t('adminUsers.loading') }}</p>
+      <p v-else-if="!siteUsers.length" class="hint">{{ t('adminUsers.emptyUsers') }}</p>
+      <table v-else class="user-table">
+        <thead>
+          <tr>
+            <th class="col-username">{{ t('adminUsers.username') }}</th>
+            <th class="col-points">{{ t('adminUsers.pointsCol') }}</th>
+            <th>{{ t('adminUsers.resetPassword') }}</th>
+            <th class="col-time">{{ t('adminUsers.createdAt') }}</th>
+            <th class="col-actions">{{ t('adminUsers.actions') }}</th>
+          </tr>
+        </thead>
+        <tbody v-for="u in siteUsers" :key="u.id">
+          <tr>
+            <td class="col-username">{{ u.username }}</td>
+            <td class="col-points">{{ u.points }}</td>
+            <td><input v-model="u._newPassword" type="password" :placeholder="t('adminUsers.passwordPh')" /></td>
+            <td class="col-time">{{ fmtTime(u.created_at) }}</td>
+            <td class="col-actions">
+              <button class="btn" @click="saveSiteUserPassword(u)">{{ t('adminUsers.save') }}</button>
+              <button class="btn" @click="toggleDetail(u)">
+                {{ expandedId === u.id ? t('adminUsers.collapse') : t('adminUsers.detail') }}
+              </button>
+            </td>
+          </tr>
+          <tr v-if="expandedId === u.id" class="detail-row">
+            <td colspan="5">
+              <p v-if="detail.loading" class="hint">{{ t('adminUsers.loading') }}</p>
+              <template v-else>
+                <h4>{{ t('adminUsers.checkinsTitle') }}</h4>
+                <p v-if="!detail.checkins.length" class="hint">{{ t('adminUsers.emptyCheckins') }}</p>
+                <table v-else class="detail-table">
+                  <thead>
+                    <tr>
+                      <th>{{ t('adminUsers.colCheckinDate') }}</th>
+                      <th>{{ t('adminUsers.colStreak') }}</th>
+                      <th>{{ t('adminUsers.colEarned') }}</th>
+                      <th>{{ t('adminUsers.colTime') }}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="ci in detail.checkins" :key="ci.id">
+                      <td>{{ ci.checkin_date }}</td>
+                      <td>{{ ci.streak_day }}</td>
+                      <td class="pos">+{{ ci.points_earned }}</td>
+                      <td>{{ fmtDateTime(ci.created_at) }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+                <h4>{{ t('adminUsers.txTitle') }}</h4>
+                <p v-if="!detail.transactions.length" class="hint">{{ t('adminUsers.emptyTx') }}</p>
+                <table v-else class="detail-table">
+                  <thead>
+                    <tr>
+                      <th>{{ t('adminUsers.colTime') }}</th>
+                      <th>{{ t('adminUsers.colChange') }}</th>
+                      <th>{{ t('adminUsers.colBalance') }}</th>
+                      <th>{{ t('adminUsers.colReason') }}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="tx in detail.transactions" :key="tx.id">
+                      <td>{{ fmtDateTime(tx.created_at) }}</td>
+                      <td :class="tx.change >= 0 ? 'pos' : 'neg'">{{ tx.change > 0 ? '+' : '' }}{{ tx.change }}</td>
+                      <td>{{ tx.balance_after }}</td>
+                      <td>{{ txReason(tx) }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </template>
             </td>
           </tr>
         </tbody>
@@ -243,6 +400,42 @@ onMounted(loadUsers);
 }
 .btn.danger:hover {
   border-color: #c0392b;
+  color: #c0392b;
+}
+.col-points {
+  width: 70px;
+}
+.detail-row td {
+  background: rgba(0, 0, 0, 0.02);
+  padding: 14px 12px;
+}
+.detail-row h4 {
+  font-size: 14px;
+  margin: 4px 0 8px;
+}
+.detail-row h4 + .detail-table {
+  margin-bottom: 16px;
+}
+.detail-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.detail-table th {
+  text-align: left;
+  color: var(--color-text-light);
+  font-weight: normal;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--color-border);
+}
+.detail-table td {
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--color-border);
+}
+.pos {
+  color: #27ae60;
+}
+.neg {
   color: #c0392b;
 }
 </style>

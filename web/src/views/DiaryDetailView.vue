@@ -102,37 +102,83 @@ async function submitQuote() {
 }
 
 // 在正文 DOM 中把每条引用原句包上 <mark class="quote-mark">（出现多次全部高亮）
+// 匹配在「所有文本节点拼接并去除空白」的整体文本上进行：
+// 兼容选句跨文本节点（加粗/链接等内联标签）及跨段落（选区 toString 带 \n 而正文无）的情况
 function highlightQuotes() {
   const el = bodyEl.value;
   if (!el || !quoteMap.size) return;
   // 长句优先，避免短句先高亮后长句跨 mark 匹配不上
   const quotes = [...quoteMap.keys()].sort((a, b) => b.length - a.length);
   for (const quote of quotes) {
+    const needle = quote.replace(/\s+/g, '');
+    if (!needle) continue;
+    // 每条引用重新收集：跳过已有 mark 内的文本节点，避免重复高亮
     const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, {
       acceptNode(node) {
-        if (!node.nodeValue.includes(quote)) return NodeFilter.FILTER_REJECT;
+        if (!node.nodeValue.replace(/\s+/g, '')) return NodeFilter.FILTER_REJECT;
         if (node.parentElement.closest('mark.quote-mark')) return NodeFilter.FILTER_REJECT;
         return NodeFilter.FILTER_ACCEPT;
       },
     });
     const nodes = [];
     while (walker.nextNode()) nodes.push(walker.currentNode);
-    for (const node of nodes) {
+    if (!nodes.length) continue;
+    // 拼接去空白文本，indexMap[i] 记录第 i 个字符所在节点及节点内偏移
+    let haystack = '';
+    const indexMap = [];
+    nodes.forEach((node, ni) => {
       const text = node.nodeValue;
+      for (let i = 0; i < text.length; i++) {
+        if (/\s/.test(text[i])) continue;
+        indexMap.push({ ni, offset: i });
+        haystack += text[i];
+      }
+    });
+    // 找出所有匹配，换算成各文本节点上需要高亮的区间（含区间内空白，保证视觉连续）
+    const rangesByNode = new Map(); // ni -> [ [start, endExclusive), ... ]
+    let from = 0;
+    for (;;) {
+      const idx = haystack.indexOf(needle, from);
+      if (idx === -1) break;
+      const end = idx + needle.length;
+      let p = idx;
+      while (p < end) {
+        const { ni, offset } = indexMap[p];
+        let last = offset;
+        p++;
+        while (p < end && indexMap[p].ni === ni) {
+          last = indexMap[p].offset;
+          p++;
+        }
+        const ranges = rangesByNode.get(ni) || [];
+        ranges.push([offset, last + 1]);
+        rangesByNode.set(ni, ranges);
+      }
+      from = end;
+    }
+    // 逐节点拆分并包 mark
+    for (const [ni, ranges] of rangesByNode) {
+      const node = nodes[ni];
+      const text = node.nodeValue;
+      ranges.sort((a, b) => a[0] - b[0]);
+      const merged = [];
+      for (const r of ranges) {
+        const prev = merged[merged.length - 1];
+        if (prev && r[0] <= prev[1]) prev[1] = Math.max(prev[1], r[1]);
+        else merged.push([...r]);
+      }
       const frag = document.createDocumentFragment();
-      let last = 0;
-      let idx = text.indexOf(quote);
-      while (idx !== -1) {
-        frag.append(text.slice(last, idx));
+      let pos = 0;
+      for (const [s, e] of merged) {
+        frag.append(text.slice(pos, s));
         const mark = document.createElement('mark');
         mark.className = 'quote-mark';
-        mark.textContent = quote;
+        mark.textContent = text.slice(s, e);
         mark.dataset.quote = quote;
         frag.append(mark);
-        last = idx + quote.length;
-        idx = text.indexOf(quote, last);
+        pos = e;
       }
-      frag.append(text.slice(last));
+      frag.append(text.slice(pos));
       node.parentNode.replaceChild(frag, node);
     }
   }
@@ -178,13 +224,16 @@ async function loadQuoteComments() {
 onMounted(async () => {
   try {
     diary.value = await api(`/diaries/${route.params.slugOrId}`);
-    // 等 v-html 渲染完成后再操作正文 DOM 做高亮
-    await nextTick();
-    await loadQuoteComments();
   } catch (e) {
     error.value = e.message || '加载失败';
   } finally {
+    // 先结束 loading 让正文（bodyEl 所在分支）渲染出来，再拉评论做高亮
     loading.value = false;
+  }
+  if (diary.value) {
+    // 等 v-html 渲染完成后再操作正文 DOM 做高亮
+    await nextTick();
+    await loadQuoteComments();
   }
   document.addEventListener('click', onDocClick);
 });
