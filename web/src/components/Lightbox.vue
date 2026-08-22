@@ -1,16 +1,28 @@
 <script setup>
-import { computed, onMounted, onUnmounted } from 'vue';
+import { computed, ref, watch, onMounted, onUnmounted } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { api } from '../api';
+import LikeButton from './LikeButton.vue';
 
 const { t } = useI18n();
 const props = defineProps({
-  photos: { type: Array, default: () => [] }, // [{ filename, caption }]
+  photos: { type: Array, default: () => [] }, // [{ id, filename, caption }]
 });
 const index = defineModel('index', { type: Number, default: null });
 
 const current = computed(() =>
   index.value === null ? null : props.photos[index.value] || null
 );
+
+// 当前照片的点赞状态（无 id 的照片不支持点赞）
+const likeState = ref({ count: 0, liked: false });
+watch(current, async (p) => {
+  likeState.value = { count: 0, liked: false };
+  if (!p?.id) return;
+  try {
+    likeState.value = await api(`/likes?target_type=photo&target_id=${p.id}`);
+  } catch { /* 点赞计数加载失败不阻塞看图 */ }
+});
 
 function close() {
   index.value = null;
@@ -41,6 +53,15 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown));
     <figure class="stage">
       <img :src="`/uploads/${current.filename}`" :alt="current.caption || ''" class="img" />
       <figcaption v-if="current.caption" class="caption">{{ current.caption }}</figcaption>
+      <LikeButton
+        v-if="current.id"
+        class="like"
+        target-type="photo"
+        :target-id="current.id"
+        :count="likeState.count"
+        :liked="likeState.liked"
+        @update="likeState = $event"
+      />
     </figure>
     <button v-if="photos.length > 1" class="arrow right" :aria-label="t('lightbox.next')" @click="next">&#8250;</button>
   </div>

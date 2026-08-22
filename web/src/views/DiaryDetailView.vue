@@ -7,6 +7,7 @@ import { api } from '../api';
 import { localize } from '../i18n';
 import { fmtDateFull } from '../utils/date';
 import MessageBoard from '../components/MessageBoard.vue';
+import LikeButton from '../components/LikeButton.vue';
 
 const { t } = useI18n();
 const route = useRoute();
@@ -14,6 +15,7 @@ const route = useRoute();
 const diary = ref(null);
 const loading = ref(true);
 const error = ref('');
+const likeState = ref({ count: 0, liked: false });
 
 // v-html 安全前提：content_md 为管理员自写的可信内容，首版不做消毒（spec 决策）。
 const html = computed(() => (diary.value ? marked.parse(diary.value.content_md || '') : ''));
@@ -231,6 +233,9 @@ onMounted(async () => {
     loading.value = false;
   }
   if (diary.value) {
+    try {
+      likeState.value = await api(`/likes?target_type=diary&target_id=${diary.value.id}`);
+    } catch { /* 点赞计数加载失败不阻塞阅读 */ }
     // 等 v-html 渲染完成后再操作正文 DOM 做高亮
     await nextTick();
     await loadQuoteComments();
@@ -269,6 +274,15 @@ onBeforeUnmount(() => {
         </p>
         <div ref="bodyEl" class="md-body" v-html="html" @mouseup="onSelect" @click="onBodyClick"></div>
       </article>
+      <div class="like-row">
+        <LikeButton
+          target-type="diary"
+          :target-id="diary.id"
+          :count="likeState.count"
+          :liked="likeState.liked"
+          @update="likeState = $event"
+        />
+      </div>
       <MessageBoard targetType="diary" :targetId="diary.id" />
 
       <!-- 选中文本后浮出的「评论」按钮 -->
@@ -378,6 +392,11 @@ onBeforeUnmount(() => {
   padding: 1px 8px;
   border-radius: 999px;
   margin-right: 6px;
+}
+.like-row {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 24px;
 }
 .sel-comment-btn {
   position: fixed;

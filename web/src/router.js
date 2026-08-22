@@ -38,6 +38,7 @@ const routes = [
       { path: 'settings', name: 'admin-settings', component: () => import('./views/admin/SettingsView.vue') },
       { path: 'prizes', name: 'admin-prizes', component: () => import('./views/admin/AdminPrizesView.vue') },
       { path: 'prize-records', name: 'admin-prize-records', component: () => import('./views/admin/AdminPrizeRecordsView.vue') },
+      { path: 'changelog', name: 'admin-changelog', component: () => import('./views/admin/ChangelogView.vue') },
     ],
   },
   // 未知路径兜底：经由裸根路径跳默认语言

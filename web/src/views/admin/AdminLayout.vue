@@ -19,6 +19,7 @@ const navItems = computed(() => [
   { to: localize('/admin/prizes'), label: t('admin.prizes') },
   { to: localize('/admin/prize-records'), label: t('admin.prizeRecords') },
   { to: localize('/admin/users'), label: t('admin.users') },
+  { to: localize('/admin/changelog'), label: t('admin.changelog') },
   { to: localize('/admin/settings'), label: t('admin.settings') },
 ]);
 

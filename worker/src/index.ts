@@ -5,6 +5,7 @@ import adminRoutes from './routes/admin';
 import publicRoutes from './routes/public';
 import usersRoutes from './routes/users';
 import pointsRoutes from './routes/points';
+import likesRoutes from './routes/likes';
 import adminPrizesRoutes from './routes/adminPrizes';
 import storageRoutes from './routes/storage';
 
@@ -39,6 +40,7 @@ app.route('/api/admin', adminPrizesRoutes);
 app.route('/api', publicRoutes);
 app.route('/api', usersRoutes);
 app.route('/api', pointsRoutes);
+app.route('/api/likes', likesRoutes);
 app.route('/uploads', storageRoutes);
 
 export default app;

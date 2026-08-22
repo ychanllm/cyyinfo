@@ -3,15 +3,22 @@ import { ref, onMounted } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { api } from '../api';
 import { localize } from '../i18n';
+import LikeButton from '../components/LikeButton.vue';
 
 const { t } = useI18n();
 const albums = ref([]);
 const loading = ref(true);
 const error = ref('');
+const likes = ref({}); // album.id -> { count, liked }
 
 onMounted(async () => {
   try {
     albums.value = await api('/albums');
+    if (albums.value.length) {
+      try {
+        likes.value = await api(`/likes/batch?target_type=album&ids=${albums.value.map((a) => a.id).join(',')}`);
+      } catch { /* 点赞计数加载失败不阻塞列表 */ }
+    }
   } catch (e) {
     error.value = e.message || '加载失败';
   } finally {
@@ -51,6 +58,14 @@ onMounted(async () => {
         <div class="meta">
           <h2 class="title">{{ a.title }}</h2>
           <p v-if="a.description" class="desc">{{ a.description }}</p>
+          <LikeButton
+            class="like"
+            target-type="album"
+            :target-id="a.id"
+            :count="likes[a.id]?.count ?? 0"
+            :liked="likes[a.id]?.liked ?? false"
+            @update="likes[a.id] = $event"
+          />
         </div>
       </router-link>
     </div>
@@ -129,5 +144,8 @@ onMounted(async () => {
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+.like {
+  margin-top: 8px;
 }
 </style>

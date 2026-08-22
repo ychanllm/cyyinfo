@@ -5,6 +5,7 @@ import { signJwt, verifyJwt, userAuth } from '../auth';
 import { rateLimit, clientIp } from '../security';
 import { getSetting } from '../guard';
 import { saveUpload } from '../upload';
+import { logAudit } from '../audit';
 
 const users = new Hono<{ Bindings: Env }>();
 
@@ -39,6 +40,7 @@ users.post('/auth/register', async (c) => {
   if (dup) return c.json({ detail: '用户名已被注册' }, 409);
   const r = await c.env.DB.prepare('INSERT INTO users (username, password_hash) VALUES (?, ?)')
     .bind(name, bcrypt.hashSync(password, 10)).run();
+  await logAudit(c.env.DB, 'user_register', name, `用户 ${name} 注册`);
   const token = await signJwt(c.env, { sub: r.meta.last_row_id, username: name, role: 'user' }, 24 * 7);
   return c.json({ token, username: name });
 });
@@ -80,6 +82,7 @@ users.post('/users/me/avatar', userAuth, async (c) => {
     .bind(me.id).first<{ avatar: string | null }>();
   await c.env.DB.prepare('UPDATE users SET avatar = ? WHERE id = ?').bind(key!, me.id).run();
   if (old?.avatar) await c.env.UPLOADS.delete(old.avatar).catch(() => {});
+  await logAudit(c.env.DB, 'avatar_update', (c.get('user') as { username: string }).username, `用户更换头像`);
   return c.json({ avatar: key });
 });
 

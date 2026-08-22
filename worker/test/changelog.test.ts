@@ -1,0 +1,146 @@
+import { SELF, env } from 'cloudflare:test';
+import { describe, it, expect, beforeAll } from 'vitest';
+import { applyMigrations, adminToken, registerUser } from './helpers';
+
+beforeAll(applyMigrations);
+
+const json = { 'Content-Type': 'application/json' };
+const adminH = async () => ({ Authorization: `Bearer ${await adminToken()}` });
+
+// 最小合法 JPEG 字节
+const jpeg = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01, 0xff, 0xd9]);
+
+async function auditLogs(): Promise<any[]> {
+  const res = await SELF.fetch('http://x/api/admin/audit-logs', { headers: await adminH() });
+  expect(res.status).toBe(200);
+  return (await res.json()) as any[];
+}
+
+describe('管理端变更日志', () => {
+  it('未带管理员 token 401', async () => {
+    expect((await SELF.fetch('http://x/api/admin/changelogs')).status).toBe(401);
+    expect((await SELF.fetch('http://x/api/admin/audit-logs')).status).toBe(401);
+    expect((await SELF.fetch('http://x/api/admin/changelogs', { method: 'POST', headers: json, body: '{}' })).status).toBe(401);
+    expect((await SELF.fetch('http://x/api/admin/changelogs/1', { method: 'DELETE' })).status).toBe(401);
+  });
+
+  it('changelogs 增删改查，倒序展示', async () => {
+    const headers = { ...(await adminH()), ...json };
+
+    const emptyVersion = await SELF.fetch('http://x/api/admin/changelogs', {
+      method: 'POST', headers, body: JSON.stringify({ version: '  ' }),
+    });
+    expect(emptyVersion.status).toBe(400);
+
+    const c1 = await SELF.fetch('http://x/api/admin/changelogs', {
+      method: 'POST', headers, body: JSON.stringify({ version: '1.0.0', content: '首个版本' }),
+    });
+    expect(c1.status).toBe(200);
+    const { id: id1 } = (await c1.json()) as any;
+    expect(id1).toBeTruthy();
+
+    const c2 = await SELF.fetch('http://x/api/admin/changelogs', {
+      method: 'POST', headers, body: JSON.stringify({ version: '1.1.0', content: '新增日志页' }),
+    });
+    const { id: id2 } = (await c2.json()) as any;
+
+    const list = (await (
+      await SELF.fetch('http://x/api/admin/changelogs', { headers: await adminH() })
+    ).json()) as any[];
+    // 倒序：后建的在前
+    expect(list[0].id).toBe(id2);
+    expect(list[1].id).toBe(id1);
+    expect(list[0].version).toBe('1.1.0');
+    expect(list[0].created_at).toBeTruthy();
+
+    const up = await SELF.fetch(`http://x/api/admin/changelogs/${id1}`, {
+      method: 'PUT', headers, body: JSON.stringify({ version: '1.0.1', content: '修正文案' }),
+    });
+    expect(up.status).toBe(200);
+
+    const missing = await SELF.fetch('http://x/api/admin/changelogs/999999', {
+      method: 'PUT', headers, body: JSON.stringify({ version: '9.9.9' }),
+    });
+    expect(missing.status).toBe(404);
+
+    const afterUp = (await (
+      await SELF.fetch('http://x/api/admin/changelogs', { headers: await adminH() })
+    ).json()) as any[];
+    const edited = afterUp.find((r) => r.id === id1);
+    expect(edited.version).toBe('1.0.1');
+    expect(edited.content).toBe('修正文案');
+
+    const del = await SELF.fetch(`http://x/api/admin/changelogs/${id1}`, { method: 'DELETE', headers: await adminH() });
+    expect(del.status).toBe(200);
+    const afterDel = (await (
+      await SELF.fetch('http://x/api/admin/changelogs', { headers: await adminH() })
+    ).json()) as any[];
+    expect(afterDel.find((r) => r.id === id1)).toBeUndefined();
+
+    // 清理
+    await SELF.fetch(`http://x/api/admin/changelogs/${id2}`, { method: 'DELETE', headers: await adminH() });
+  });
+
+  it('注册成功自动写入 user_register 审计日志', async () => {
+    await registerUser('audit_reg_user');
+    const logs = await auditLogs();
+    const log = logs.find((l) => l.type === 'user_register' && l.actor === 'audit_reg_user');
+    expect(log).toBeTruthy();
+    expect(log.detail).toContain('audit_reg_user');
+    expect(log.created_at).toBeTruthy();
+  });
+
+  it('更换头像自动写入 avatar_update 审计日志', async () => {
+    const { token } = await registerUser('audit_avatar_user');
+    const form = new FormData();
+    form.append('file', new File([jpeg], 'a.jpg', { type: 'image/jpeg' }));
+    const up = await SELF.fetch('http://x/api/users/me/avatar', {
+      method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: form,
+    });
+    expect(up.status).toBe(200);
+    const logs = await auditLogs();
+    expect(logs.find((l) => l.type === 'avatar_update' && l.actor === 'audit_avatar_user')).toBeTruthy();
+  });
+
+  it('管理员重置密码自动写入 password_reset 审计日志', async () => {
+    const { id } = await registerUser('audit_reset_user');
+    const res = await SELF.fetch(`http://x/api/admin/site-users/${id}`, {
+      method: 'PUT', headers: { ...(await adminH()), ...json },
+      body: JSON.stringify({ password: 'newpass6' }),
+    });
+    expect(res.status).toBe(200);
+    const logs = await auditLogs();
+    const log = logs.find((l) => l.type === 'password_reset' && l.detail?.includes('audit_reset_user'));
+    expect(log).toBeTruthy();
+    expect(log.actor).toBe('admin');
+  });
+
+  it('管理员新增/删除账号自动写入 user_create / user_delete 审计日志', async () => {
+    const headers = { ...(await adminH()), ...json };
+    const create = await SELF.fetch('http://x/api/admin/users', {
+      method: 'POST', headers, body: JSON.stringify({ username: 'audit_admin2', password: 'password8' }),
+    });
+    expect(create.status).toBe(200);
+    const { id } = (await create.json()) as any;
+
+    const del = await SELF.fetch(`http://x/api/admin/users/${id}`, { method: 'DELETE', headers: await adminH() });
+    expect(del.status).toBe(200);
+
+    const logs = await auditLogs();
+    expect(logs.find((l) => l.type === 'user_create' && l.detail?.includes('audit_admin2'))).toBeTruthy();
+    expect(logs.find((l) => l.type === 'user_delete' && l.detail?.includes('audit_admin2'))).toBeTruthy();
+  });
+
+  it('audit-logs 最多返回 100 条且倒序', async () => {
+    // 直接灌入 110 条，验证 LIMIT 100
+    const stmts = Array.from({ length: 110 }, (_, i) =>
+      env.DB.prepare('INSERT INTO audit_logs (type, actor, detail) VALUES (?, ?, ?)')
+        .bind('bulk_test', 'tester', `bulk ${i}`));
+    await env.DB.batch(stmts);
+    const logs = await auditLogs();
+    expect(logs.length).toBe(100);
+    for (let i = 1; i < logs.length; i++) expect(logs[i - 1].id).toBeGreaterThan(logs[i].id);
+    // 清理，避免影响其他用例
+    await env.DB.prepare("DELETE FROM audit_logs WHERE type = 'bulk_test'").run();
+  });
+});

@@ -5,6 +5,7 @@ import { signJwt, adminAuth } from '../auth';
 import { getSetting, setSetting } from '../guard';
 import { rateLimit, clientIp } from '../security';
 import { saveUpload } from '../upload';
+import { logAudit } from '../audit';
 
 interface AdminUserRow {
   id: number;
@@ -64,6 +65,9 @@ admin.use('/site-users', adminAuth);
 admin.use('/site-users/*', adminAuth);
 admin.use('/reminders', adminAuth);
 admin.use('/reminders/*', adminAuth);
+admin.use('/changelogs', adminAuth);
+admin.use('/changelogs/*', adminAuth);
+admin.use('/audit-logs', adminAuth);
 
 // ---- 账号管理 ----
 admin.get('/users', async (c) => {
@@ -81,6 +85,7 @@ admin.post('/users', async (c) => {
   if (dup) return c.json({ detail: '账号已存在' }, 400);
   const r = await c.env.DB.prepare('INSERT INTO admin_users (username, password_hash, display_name) VALUES (?, ?, ?)')
     .bind(username, bcrypt.hashSync(password, 10), display_name).run();
+  await logAudit(c.env.DB, 'user_create', (c.get('admin') as { username: string }).username, `新增管理员账号 ${username}`);
   return c.json({ id: r.meta.last_row_id });
 });
 
@@ -93,12 +98,15 @@ admin.put('/users/:id', async (c) => {
 });
 
 admin.delete('/users/:id', async (c) => {
-  const me = c.get('admin') as { id: number };
+  const me = c.get('admin') as { id: number; username: string };
   const targetId = Number(c.req.param('id'));
   if (targetId === me.id) return c.json({ detail: '不能删除当前登录账号' }, 400);
   const count = await c.env.DB.prepare('SELECT COUNT(*) AS n FROM admin_users').first<{ n: number }>();
   if ((count?.n ?? 0) <= 1) return c.json({ detail: '至少保留一个账号' }, 400);
+  const target = await c.env.DB.prepare('SELECT username FROM admin_users WHERE id = ?')
+    .bind(targetId).first<{ username: string }>();
   await c.env.DB.prepare('DELETE FROM admin_users WHERE id = ?').bind(targetId).run();
+  await logAudit(c.env.DB, 'user_delete', me.username, `删除管理员账号 ${target?.username ?? targetId}`);
   return c.json({ ok: true });
 });
 
@@ -113,9 +121,12 @@ admin.get('/site-users', async (c) => {
 admin.put('/site-users/:id', async (c) => {
   const { password } = await c.req.json<{ password?: string }>();
   if (!password || password.length < 6) return c.json({ detail: '密码至少 6 位' }, 400);
+  const target = await c.env.DB.prepare('SELECT username FROM users WHERE id = ?')
+    .bind(Number(c.req.param('id'))).first<{ username: string }>();
   const r = await c.env.DB.prepare('UPDATE users SET password_hash = ? WHERE id = ?')
     .bind(bcrypt.hashSync(password, 10), Number(c.req.param('id'))).run();
   if (!r.meta.changes) return c.json({ detail: '用户不存在' }, 404);
+  await logAudit(c.env.DB, 'password_reset', (c.get('admin') as { username: string }).username, `重置用户 ${target?.username ?? c.req.param('id')} 的密码`);
   return c.json({ ok: true });
 });
 
@@ -623,6 +634,46 @@ admin.put('/reminders/:id', async (c) => {
 admin.delete('/reminders/:id', async (c) => {
   await c.env.DB.prepare('DELETE FROM reminders WHERE id = ?').bind(c.req.param('id')).run();
   return c.json({ ok: true });
+});
+
+// ---- 版本更新日志 CRUD ----
+admin.get('/changelogs', async (c) => {
+  const { results } = await c.env.DB.prepare(
+    'SELECT * FROM changelogs ORDER BY id DESC'
+  ).all();
+  return c.json(results);
+});
+
+admin.post('/changelogs', async (c) => {
+  const { version, content = '' } = await c.req.json();
+  if (!version || !String(version).trim()) return c.json({ detail: '版本号必填' }, 400);
+  const r = await c.env.DB.prepare(
+    'INSERT INTO changelogs (version, content) VALUES (?, ?)'
+  ).bind(String(version).trim(), String(content)).run();
+  return c.json({ id: r.meta.last_row_id });
+});
+
+admin.put('/changelogs/:id', async (c) => {
+  const { version, content } = await c.req.json();
+  if (!version || !String(version).trim()) return c.json({ detail: '版本号必填' }, 400);
+  const r = await c.env.DB.prepare(
+    'UPDATE changelogs SET version = ?, content = ? WHERE id = ?'
+  ).bind(String(version).trim(), String(content ?? ''), c.req.param('id')).run();
+  if (!r.meta.changes) return c.json({ detail: '记录不存在' }, 404);
+  return c.json({ ok: true });
+});
+
+admin.delete('/changelogs/:id', async (c) => {
+  await c.env.DB.prepare('DELETE FROM changelogs WHERE id = ?').bind(c.req.param('id')).run();
+  return c.json({ ok: true });
+});
+
+// ---- 用户数据变动（自动记录，只读，最新 100 条）----
+admin.get('/audit-logs', async (c) => {
+  const { results } = await c.env.DB.prepare(
+    'SELECT * FROM audit_logs ORDER BY id DESC LIMIT 100'
+  ).all();
+  return c.json(results);
 });
 
 export default admin;

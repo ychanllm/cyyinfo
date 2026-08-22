@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n';
 import { api } from '../api';
 import { localize } from '../i18n';
 import { fmtDateFull } from '../utils/date';
+import LikeButton from '../components/LikeButton.vue';
 
 const { t } = useI18n();
 const PAGE_SIZE = 10; // 与后端每页条数一致
@@ -15,6 +16,15 @@ const loading = ref(true);
 const error = ref('');
 const categories = ref([]); // 分类筛选 chips
 const activeCategory = ref(null); // null = 全部
+const likes = ref({}); // diary.id -> { count, liked }
+
+async function loadLikes(items) {
+  try {
+    likes.value = items.length
+      ? await api(`/likes/batch?target_type=diary&ids=${items.map((d) => d.id).join(',')}`)
+      : {};
+  } catch { /* 点赞计数加载失败不阻塞列表 */ }
+}
 
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / PAGE_SIZE)));
 
@@ -28,6 +38,7 @@ async function load(p) {
     diaries.value = data.items || [];
     total.value = data.total || 0;
     page.value = p;
+    loadLikes(diaries.value);
   } catch (e) {
     error.value = e.message || '加载失败';
   } finally {
@@ -94,6 +105,14 @@ onMounted(async () => {
           <p class="info">
             <span v-if="d.category_name" class="cat-badge">{{ d.category_name }}</span>
             {{ d.author }} · {{ fmtDateFull(d.published_at) }}
+            <LikeButton
+              class="like"
+              target-type="diary"
+              :target-id="d.id"
+              :count="likes[d.id]?.count ?? 0"
+              :liked="likes[d.id]?.liked ?? false"
+              @update="likes[d.id] = $event"
+            />
           </p>
         </div>
       </router-link>
@@ -194,6 +213,12 @@ onMounted(async () => {
 .info {
   font-size: 13px;
   color: var(--color-text-light);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.info .like {
+  margin-left: auto;
 }
 .pager {
   display: flex;

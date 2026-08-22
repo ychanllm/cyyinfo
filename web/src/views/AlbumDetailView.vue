@@ -5,6 +5,7 @@ import { useI18n } from 'vue-i18n';
 import { api } from '../api';
 import { localize } from '../i18n';
 import Lightbox from '../components/Lightbox.vue';
+import LikeButton from '../components/LikeButton.vue';
 
 const { t } = useI18n();
 const route = useRoute();
@@ -12,6 +13,23 @@ const album = ref(null);
 const loading = ref(true);
 const error = ref('');
 const lightboxIndex = ref(null);
+const albumLike = ref({ count: 0, liked: false });
+const photoLikes = ref({}); // photo.id -> { count, liked }
+
+async function loadLikes() {
+  const id = album.value.id;
+  try {
+    albumLike.value = await api(`/likes?target_type=album&target_id=${id}`);
+  } catch { /* 点赞计数加载失败不阻塞页面 */ }
+  const photos = album.value.photos || [];
+  if (photos.length) {
+    try {
+      photoLikes.value = await api(`/likes/batch?target_type=photo&ids=${photos.map((p) => p.id).join(',')}`);
+    } catch { /* 同上 */ }
+  } else {
+    photoLikes.value = {};
+  }
+}
 
 // 横向滑动拍立得
 const carouselEl = ref(null);
@@ -23,6 +41,7 @@ async function load() {
   activeIndex.value = 0;
   try {
     album.value = await api(`/albums/${route.params.id}`);
+    loadLikes();
   } catch (e) {
     error.value = e.message || '加载失败';
   } finally {
@@ -79,23 +98,39 @@ watch(() => route.params.id, load);
       <header class="header">
         <h1 class="title">{{ album.title }}</h1>
         <p v-if="album.description" class="desc">{{ album.description }}</p>
+        <LikeButton
+          class="album-like"
+          target-type="album"
+          :target-id="album.id"
+          :count="albumLike.count"
+          :liked="albumLike.liked"
+          @update="albumLike = $event"
+        />
       </header>
 
       <p v-if="!album.photos.length" class="hint">{{ t('albumDetail.noPhotos') }}</p>
 
       <template v-else>
         <div class="carousel" ref="carouselEl" @scroll.passive="onScroll">
-          <button
-            v-for="(p, i) in album.photos"
-            :key="p.id"
-            class="polaroid slide"
-            :class="{ active: i === activeIndex }"
-            :style="{ '--tilt': `${(i - activeIndex) * 0.6}deg` }"
-            @click="lightboxIndex = i"
-          >
-            <img :src="`/uploads/${p.filename}`" :alt="p.caption || ''" class="ph-img" loading="lazy" />
-            <span class="ph-caption">{{ p.caption || '· · ·' }}</span>
-          </button>
+          <div v-for="(p, i) in album.photos" :key="p.id" class="slide-wrap">
+            <button
+              class="polaroid slide"
+              :class="{ active: i === activeIndex }"
+              :style="{ '--tilt': `${(i - activeIndex) * 0.6}deg` }"
+              @click="lightboxIndex = i"
+            >
+              <img :src="`/uploads/${p.filename}`" :alt="p.caption || ''" class="ph-img" loading="lazy" />
+              <span class="ph-caption">{{ p.caption || '· · ·' }}</span>
+            </button>
+            <LikeButton
+              class="slide-like"
+              target-type="photo"
+              :target-id="p.id"
+              :count="photoLikes[p.id]?.count ?? 0"
+              :liked="photoLikes[p.id]?.liked ?? false"
+              @update="photoLikes[p.id] = $event"
+            />
+          </div>
         </div>
 
         <div class="controls">
@@ -150,15 +185,28 @@ watch(() => route.params.id, load);
   display: none;
 }
 
-.slide {
+.album-like {
+  margin-top: 10px;
+}
+
+.slide-wrap {
+  position: relative;
   flex: 0 0 min(72vw, 360px);
   scroll-snap-align: center;
+}
+.slide {
+  width: 100%;
   border: none;
   cursor: pointer;
   text-align: left;
 }
 .slide.active {
   box-shadow: var(--shadow-lg);
+}
+.slide-like {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
 }
 
 .controls {
