@@ -8,6 +8,7 @@ export default {
     diaries: '日记',
     music: '音乐',
     points: '签到',
+    ranking: '排行',
     defaultSiteName: '我们的小站',
   },
   home: {
@@ -83,6 +84,7 @@ export default {
     submitted: '留言已提交，审核后显示',
     published: '评论已发布',
     empty: '还没有留言，来说点什么吧',
+    reply: '回复',
   },
   lightbox: {
     close: '关闭',
@@ -93,6 +95,16 @@ export default {
     like: '赞',
     liked: '已赞',
     loginToLike: '登录后即可点赞',
+  },
+  ranking: {
+    title: '排行榜',
+    loading: '加载中…',
+    empty: '还没有上榜内容，去逛逛吧',
+    albums: '热门相册',
+    photos: '热门照片',
+    diaries: '热门日记',
+    views: '浏览量',
+    likes: '点赞数',
   },
   player: {
     prev: '上一首',

@@ -4,6 +4,7 @@ import { useRoute } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { api } from '../api';
 import { localize } from '../i18n';
+import { reportView } from '../utils/views';
 import Lightbox from '../components/Lightbox.vue';
 import LikeButton from '../components/LikeButton.vue';
 
@@ -41,6 +42,7 @@ async function load() {
   activeIndex.value = 0;
   try {
     album.value = await api(`/albums/${route.params.id}`);
+    reportView('album', album.value.id);
     loadLikes();
   } catch (e) {
     error.value = e.message || '加载失败';

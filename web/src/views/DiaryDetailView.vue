@@ -6,6 +6,7 @@ import { marked } from 'marked';
 import { api } from '../api';
 import { localize } from '../i18n';
 import { fmtDateFull } from '../utils/date';
+import { reportView } from '../utils/views';
 import MessageBoard from '../components/MessageBoard.vue';
 import LikeButton from '../components/LikeButton.vue';
 
@@ -31,6 +32,12 @@ const quoteForm = ref({ open: false, x: 0, y: 0, quote: '', nickname: '', conten
 const quoteNotice = ref('');
 // 高亮气泡
 const popover = ref({ open: false, x: 0, y: 0, quote: '', comments: [] });
+// 该篇日记的全部已审核评论（含回复），用于气泡内楼中楼展示
+const allComments = ref([]);
+// 气泡内评论点赞状态：id -> { count, liked }
+const popLikes = ref({});
+// 气泡内内联回复表单
+const popReply = ref({ forId: null, nickname: '', content: '', submitting: false, error: '' });
 // quote_text -> 该句的已审核评论列表
 let quoteMap = new Map();
 
@@ -187,11 +194,12 @@ function highlightQuotes() {
 }
 
 // 事件委托：点击正文中的高亮弹出评论气泡
-function onBodyClick(e) {
+async function onBodyClick(e) {
   const mark = e.target.closest?.('mark.quote-mark');
   if (!mark || !bodyEl.value.contains(mark)) return;
   const rect = mark.getBoundingClientRect();
   const quote = mark.dataset.quote;
+  popReply.value = { forId: null, nickname: '', content: '', submitting: false, error: '' };
   popover.value = {
     open: true,
     x: clampX(rect.left),
@@ -199,6 +207,65 @@ function onBodyClick(e) {
     quote,
     comments: quoteMap.get(quote) || [],
   };
+  // 批量拉取气泡内所有评论（含回复）的点赞计数
+  const ids = popover.value.comments.flatMap((c) => [c.id, ...popRepliesOf(c.id).map((r) => r.id)]);
+  if (ids.length) {
+    try {
+      popLikes.value = await api(`/likes/batch?target_type=message&ids=${ids.join(',')}`);
+    } catch { /* 点赞计数加载失败不阻塞气泡展示 */ }
+  }
+}
+
+// 气泡内某条评论的回复（后端已保证回复的回复挂到顶级划线评论）
+function popRepliesOf(id) {
+  return allComments.value.filter((m) => m.parent_id === id).sort((a, b) => a.id - b.id);
+}
+
+function popLikeState(id) {
+  return popLikes.value[id] || { count: 0, liked: false };
+}
+
+function openPopReply(c) {
+  popReply.value = { forId: c.id, nickname: '', content: '', submitting: false, error: '' };
+}
+
+// 气泡内回复划线评论：带 parent_id，回复本身不带 quote_text（后端也会强制置空）
+async function submitPopReply(c) {
+  const f = popReply.value;
+  f.error = '';
+  if (!f.nickname.trim() || !f.content.trim()) {
+    f.error = t('board.required');
+    return;
+  }
+  f.submitting = true;
+  try {
+    await api('/messages', {
+      method: 'POST',
+      body: {
+        nickname: f.nickname.trim(),
+        content: f.content.trim(),
+        target_type: 'diary',
+        target_id: diary.value.id,
+        parent_id: c.id,
+      },
+    });
+    popReply.value = { forId: null, nickname: '', content: '', submitting: false, error: '' };
+    quoteNotice.value = t('board.published');
+    setTimeout(() => { quoteNotice.value = ''; }, 3000);
+    await loadQuoteComments();
+    // 刷新气泡内容与点赞计数
+    popover.value.comments = quoteMap.get(popover.value.quote) || [];
+    const ids = popover.value.comments.flatMap((x) => [x.id, ...popRepliesOf(x.id).map((r) => r.id)]);
+    if (ids.length) {
+      try {
+        popLikes.value = await api(`/likes/batch?target_type=message&ids=${ids.join(',')}`);
+      } catch { /* 忽略 */ }
+    }
+  } catch (e) {
+    f.error = e.message;
+  } finally {
+    f.submitting = false;
+  }
 }
 
 // 点击气泡/小窗外部时关闭
@@ -214,6 +281,7 @@ function onDocClick(e) {
 // 拉取划线评论并重画高亮（highlightQuotes 会跳过已有 mark，只补新高亮）
 async function loadQuoteComments() {
   const list = await api(`/messages?target_type=diary&target_id=${diary.value.id}`);
+  allComments.value = list;
   quoteMap = new Map();
   for (const m of list) {
     if (!m.quote_text) continue;
@@ -233,6 +301,7 @@ onMounted(async () => {
     loading.value = false;
   }
   if (diary.value) {
+    reportView('diary', diary.value.id);
     try {
       likeState.value = await api(`/likes?target_type=diary&target_id=${diary.value.id}`);
     } catch { /* 点赞计数加载失败不阻塞阅读 */ }
@@ -336,6 +405,47 @@ onBeforeUnmount(() => {
           <li v-for="c in popover.comments" :key="c.id" class="qp-item">
             <span class="qp-nick">{{ c.nickname }}</span>
             <span class="qp-text">{{ c.content }}</span>
+            <div class="qp-actions">
+              <LikeButton
+                target-type="message"
+                :target-id="c.id"
+                :count="popLikeState(c.id).count"
+                :liked="popLikeState(c.id).liked"
+                @update="popLikes[c.id] = $event"
+              />
+              <button type="button" class="qp-reply-btn" @click="popReply.forId === c.id ? (popReply.forId = null) : openPopReply(c)">
+                {{ t('board.reply') }}
+              </button>
+            </div>
+            <div v-if="popReply.forId === c.id" class="qp-reply-form">
+              <input v-model="popReply.nickname" type="text" :placeholder="t('board.nickPlaceholder')" maxlength="20" />
+              <textarea v-model="popReply.content" rows="2" :placeholder="t('board.contentPlaceholder')" maxlength="500"></textarea>
+              <p v-if="popReply.error" class="qf-error">{{ popReply.error }}</p>
+              <div class="qf-actions">
+                <button type="button" class="qf-cancel" @click="popReply.forId = null">{{ t('diaryDetail.cancel') }}</button>
+                <button type="button" class="qf-submit" :disabled="popReply.submitting" @click="submitPopReply(c)">
+                  {{ popReply.submitting ? t('board.submitting') : t('board.submit') }}
+                </button>
+              </div>
+            </div>
+            <ul v-if="popRepliesOf(c.id).length" class="qp-reply-list">
+              <li v-for="r in popRepliesOf(c.id)" :key="r.id" class="qp-item">
+                <span class="qp-nick">{{ r.nickname }}</span>
+                <span class="qp-text">{{ r.content }}</span>
+                <div class="qp-actions">
+                  <LikeButton
+                    target-type="message"
+                    :target-id="r.id"
+                    :count="popLikeState(r.id).count"
+                    :liked="popLikeState(r.id).liked"
+                    @update="popLikes[r.id] = $event"
+                  />
+                  <button type="button" class="qp-reply-btn" @click="popReply.forId === c.id ? (popReply.forId = null) : openPopReply(c)">
+                    {{ t('board.reply') }}
+                  </button>
+                </div>
+              </li>
+            </ul>
           </li>
         </ul>
       </div>
@@ -540,6 +650,56 @@ onBeforeUnmount(() => {
 .qp-text {
   white-space: pre-wrap;
   word-break: break-word;
+}
+.qp-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+.qp-reply-btn {
+  padding: 2px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-card);
+  color: var(--color-text-light);
+  font-size: 12px;
+  line-height: 1.4;
+  cursor: pointer;
+}
+.qp-reply-btn:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+.qp-reply-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+.qp-reply-form input,
+.qp-reply-form textarea {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  outline: none;
+  font: inherit;
+  font-size: 12px;
+  resize: vertical;
+}
+.qp-reply-form input:focus,
+.qp-reply-form textarea:focus {
+  border-color: var(--color-primary);
+}
+.qp-reply-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+  padding-left: 10px;
+  border-left: 2px solid var(--color-border);
 }
 @media (max-width: 480px) {
   .article {

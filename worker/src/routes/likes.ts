@@ -6,7 +6,7 @@ import { contentGuard } from '../guard';
 
 const likes = new Hono<{ Bindings: Env }>();
 
-const TARGET_TYPES = ['album', 'photo', 'diary'];
+const TARGET_TYPES = ['album', 'photo', 'diary', 'message'];
 
 function parseTarget(type: string | undefined, idRaw: unknown): { type: string; id: number } | null {
   const id = typeof idRaw === 'string' ? Number(idRaw) : idRaw;

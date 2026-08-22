@@ -7,6 +7,9 @@ export default defineWorkersConfig(async () => {
   return {
     test: {
       setupFiles: [],
+      // 测试共享同一 D1（isolatedStorage 关闭），并行执行时跨文件的待审核留言
+      // 会互相干扰（如 messages.test 断言 pending 数量），故串行执行测试文件
+      fileParallelism: false,
       poolOptions: {
         workers: {
           wrangler: { configPath: './wrangler.toml' },

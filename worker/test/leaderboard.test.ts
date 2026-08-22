@@ -1,0 +1,167 @@
+import { SELF, env } from 'cloudflare:test';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { applyMigrations, adminToken, registerUser } from './helpers';
+
+// 用专有的「榜测」数据断言，避免与其他测试文件共享 D1 的数据互相干扰
+let user: { id: number; token: string };
+let albumA = 0; let albumB = 0; let albumIdle = 0;
+let photoA = 0; let photoB = 0;
+let diary1 = 0; let diary2 = 0; let diaryDraft = 0;
+
+const postView = (target_type: string, target_id: unknown) =>
+  SELF.fetch('http://x/api/views', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ target_type, target_id }),
+  });
+
+const toggleLike = (target_type: string, target_id: number) =>
+  SELF.fetch('http://x/api/likes/toggle', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${user.token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ target_type, target_id }),
+  });
+
+beforeAll(async () => {
+  await applyMigrations();
+  await adminToken(); // 首次登录会自动创建 admin_users 记录（diaries.author_id 外键）
+  user = await registerUser('lb_user');
+
+  const a1 = await env.DB.prepare("INSERT INTO albums (title, title_en) VALUES ('榜测相册甲', 'LB Album A')").run();
+  albumA = Number(a1.meta.last_row_id);
+  const a2 = await env.DB.prepare("INSERT INTO albums (title) VALUES ('榜测相册乙')").run();
+  albumB = Number(a2.meta.last_row_id);
+  const a3 = await env.DB.prepare("INSERT INTO albums (title) VALUES ('榜测闲置相册')").run();
+  albumIdle = Number(a3.meta.last_row_id);
+
+  const p1 = await env.DB.prepare("INSERT INTO photos (album_id, filename, caption, caption_en) VALUES (?, 'lb/a.jpg', '榜测照片甲', 'LB Photo A')").bind(albumA).run();
+  photoA = Number(p1.meta.last_row_id);
+  const p2 = await env.DB.prepare("INSERT INTO photos (album_id, filename, caption) VALUES (?, 'lb/b.jpg', '榜测照片乙')").bind(albumA).run();
+  photoB = Number(p2.meta.last_row_id);
+
+  const d1 = await env.DB.prepare(
+    "INSERT INTO diaries (author_id, title, title_en, slug, status, published_at) VALUES (1, '榜测日记一', 'LB Diary One', 'lb-diary-1', 'published', datetime('now'))"
+  ).run();
+  diary1 = Number(d1.meta.last_row_id);
+  const d2 = await env.DB.prepare(
+    "INSERT INTO diaries (author_id, title, slug, status, published_at) VALUES (1, '榜测日记二', 'lb-diary-2', 'published', datetime('now'))"
+  ).run();
+  diary2 = Number(d2.meta.last_row_id);
+  const d3 = await env.DB.prepare(
+    "INSERT INTO diaries (author_id, title, slug, status) VALUES (1, '榜测草稿', 'lb-diary-draft', 'draft')"
+  ).run();
+  diaryDraft = Number(d3.meta.last_row_id);
+
+  // 浏览：相册甲 1 次；照片甲 2 次、照片乙 1 次；日记一 3 次、日记二 1 次；草稿 5 次（不应上榜）
+  await postView('album', albumA);
+  await postView('photo', photoA);
+  await postView('photo', photoA);
+  await postView('photo', photoB);
+  await postView('diary', diary1);
+  await postView('diary', diary1);
+  await postView('diary', diary1);
+  await postView('diary', diary2);
+  for (let i = 0; i < 5; i++) await postView('diary', diaryDraft);
+
+  // 点赞：相册乙 1 赞（score 5 > 相册甲 1）；照片乙 1 赞（score 6 > 照片甲 2）；日记一 1 赞（score 8）
+  await toggleLike('album', albumB);
+  await toggleLike('photo', photoB);
+  await toggleLike('diary', diary1);
+});
+
+// 测试共享同一 D1：清理本文件的造数，避免影响其它文件的公开列表计数断言
+afterAll(async () => {
+  const ids = [albumA, albumB, albumIdle];
+  await env.DB.prepare(`DELETE FROM diaries WHERE id IN (${diary1}, ${diary2}, ${diaryDraft})`).run();
+  await env.DB.prepare(`DELETE FROM albums WHERE id IN (${ids.join(',')})`).run(); // photos 随 CASCADE 删除
+  const targets: [string, number][] = [
+    ['album', albumA], ['album', albumB], ['album', albumIdle],
+    ['photo', photoA], ['photo', photoB],
+    ['diary', diary1], ['diary', diary2], ['diary', diaryDraft],
+  ];
+  for (const [type, id] of targets) {
+    await env.DB.prepare('DELETE FROM view_counts WHERE target_type = ? AND target_id = ?').bind(type, id).run();
+    await env.DB.prepare('DELETE FROM likes WHERE target_type = ? AND target_id = ?').bind(type, id).run();
+  }
+});
+
+describe('浏览量上报', () => {
+  it('POST /api/views 自增并返回当前计数', async () => {
+    const res = await postView('album', albumB);
+    expect(res.status).toBe(200);
+    const first = (await res.json()) as any;
+    expect(first.views).toBeGreaterThanOrEqual(1);
+
+    const again = (await postView('album', albumB)).status;
+    expect(again).toBe(200);
+    const row = await env.DB.prepare('SELECT count FROM view_counts WHERE target_type = ? AND target_id = ?')
+      .bind('album', albumB).first<{ count: number }>();
+    expect(row!.count).toBe(first.views + 1);
+  });
+
+  it('非法参数返回 400', async () => {
+    expect((await postView('song', 1)).status).toBe(400);
+    expect((await postView('message', 1)).status).toBe(400);
+    expect((await postView('diary', 0)).status).toBe(400);
+    expect((await postView('diary', -3)).status).toBe(400);
+    expect((await postView('diary', 1.5)).status).toBe(400);
+    expect((await postView('diary', 'abc')).status).toBe(400);
+    expect((await postView('diary', undefined)).status).toBe(400);
+  });
+
+  it('字符串数字 id 也接受', async () => {
+    expect((await postView('album', String(albumA))).status).toBe(200);
+  });
+});
+
+describe('排行榜', () => {
+  it('相册榜：按 score（赞*5 + 浏览）降序，含双语标题与 views/likes/score', async () => {
+    const res = await SELF.fetch('http://x/api/leaderboard');
+    expect(res.status).toBe(200);
+    const board = (await res.json()) as any;
+
+    // 相册乙 1 赞（score ≥ 5）应排在只有浏览的相册甲之前
+    const albums = board.albums.filter((x: any) => [albumA, albumB, albumIdle].includes(x.id));
+    expect(albums.map((x: any) => x.id)).toEqual([albumB, albumA]);
+    const ab = albums[0];
+    expect(ab.likes).toBe(1);
+    expect(ab.score).toBe(ab.likes * 5 + ab.views);
+    const aa = albums[1];
+    expect(aa.title).toBe('榜测相册甲');
+    expect(aa.title_en).toBe('LB Album A');
+    expect(aa.likes).toBe(0);
+    expect(aa.views).toBeGreaterThanOrEqual(1);
+  });
+
+  it('照片榜：照片乙（1 赞 1 浏览 = 6）排在照片甲（2 浏览 = 2）前', async () => {
+    const board = (await (await SELF.fetch('http://x/api/leaderboard')).json()) as any;
+    const photos = board.photos.filter((x: any) => [photoA, photoB].includes(x.id));
+    expect(photos.map((x: any) => x.id)).toEqual([photoB, photoA]);
+    const pb = photos[0];
+    expect(pb.likes).toBe(1);
+    expect(pb.views).toBe(1);
+    expect(pb.score).toBe(6);
+    expect(pb.album_id).toBe(albumA);
+    expect(pb.filename).toBe('lb/b.jpg');
+    const pa = photos[1];
+    expect(pa.views).toBe(2);
+    expect(pa.score).toBe(2);
+    expect(pa.caption_en).toBe('LB Photo A');
+  });
+
+  it('日记榜：只含已发布日记，草稿不上榜', async () => {
+    const board = (await (await SELF.fetch('http://x/api/leaderboard')).json()) as any;
+    const diaries = board.diaries.filter((x: any) => [diary1, diary2, diaryDraft].includes(x.id));
+    expect(diaries.map((x: any) => x.id)).toEqual([diary1, diary2]); // 8 vs 1
+    expect(diaries[0].slug).toBe('lb-diary-1');
+    expect(diaries[0].views).toBe(3);
+    expect(diaries[0].likes).toBe(1);
+    expect(diaries[0].score).toBe(8);
+    expect(board.diaries.some((x: any) => x.id === diaryDraft)).toBe(false);
+  });
+
+  it('无浏览无点赞的条目不出现', async () => {
+    const board = (await (await SELF.fetch('http://x/api/leaderboard')).json()) as any;
+    expect(board.albums.some((x: any) => x.id === albumIdle)).toBe(false);
+  });
+});

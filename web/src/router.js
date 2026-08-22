@@ -12,6 +12,7 @@ const routes = [
   { path: '/:lang/albums/:id', name: 'album-detail', component: () => import('./views/AlbumDetailView.vue') },
   { path: '/:lang/diaries', name: 'diaries', component: () => import('./views/DiariesView.vue') },
   { path: '/:lang/diaries/:slugOrId', name: 'diary-detail', component: () => import('./views/DiaryDetailView.vue') },
+  { path: '/:lang/leaderboard', name: 'leaderboard', component: () => import('./views/LeaderboardView.vue') },
   { path: '/:lang/music', name: 'music', component: () => import('./views/MusicView.vue') },
   { path: '/:lang/music/:id', name: 'music-album', component: () => import('./views/MusicAlbumView.vue') },
   { path: '/:lang/points', name: 'points', component: () => import('./views/PointsView.vue'), meta: { user: true } },

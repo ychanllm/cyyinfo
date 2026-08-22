@@ -216,8 +216,8 @@ content.get('/messages', async (c) => {
   const type = c.req.query('target_type') ?? 'site';
   const targetId = c.req.query('target_id');
   const sql = targetId
-    ? 'SELECT id, nickname, content, quote_text, created_at FROM messages WHERE is_approved = 1 AND target_type = ? AND target_id = ? ORDER BY id DESC LIMIT 100'
-    : 'SELECT id, nickname, content, quote_text, created_at FROM messages WHERE is_approved = 1 AND target_type = ? ORDER BY id DESC LIMIT 100';
+    ? 'SELECT id, nickname, content, quote_text, parent_id, created_at FROM messages WHERE is_approved = 1 AND target_type = ? AND target_id = ? ORDER BY id DESC LIMIT 100'
+    : 'SELECT id, nickname, content, quote_text, parent_id, created_at FROM messages WHERE is_approved = 1 AND target_type = ? ORDER BY id DESC LIMIT 100';
   const stmt = targetId
     ? c.env.DB.prepare(sql).bind(type, Number(targetId))
     : c.env.DB.prepare(sql).bind(type);
@@ -228,23 +228,85 @@ content.post('/messages', async (c) => {
   if (!rateLimit({ limit: 10, windowSec: 3600, key: `msg:${clientIp(c.req.raw)}` })) {
     return c.json({ detail: '留言过于频繁，请稍后再试' }, 429);
   }
-  const { nickname, content: text, target_type = 'site', target_id = null, quote_text = null } = await c.req.json();
+  const { nickname, content: text, target_type = 'site', target_id = null, quote_text = null, parent_id = null } = await c.req.json();
   if (!nickname?.trim() || !text?.trim()) return c.json({ detail: '昵称和内容必填' }, 400);
   if (nickname.length > 20) return c.json({ detail: '昵称过长' }, 400);
   if (text.length > 500) return c.json({ detail: '内容过长（500 字以内）' }, 400);
   if (!['diary', 'photo', 'site'].includes(target_type)) return c.json({ detail: '非法目标类型' }, 400);
-  // quote_text 只对日记划线评论有意义；其他目标类型直接忽略（存 NULL），不报错
-  const quote = target_type === 'diary' && typeof quote_text === 'string' && quote_text.trim()
+  // 楼中楼回复：parent 必须存在且与回复同 target；回复的回复挂到顶级（一层楼中楼）
+  let parentId: number | null = null;
+  if (parent_id !== null && parent_id !== undefined) {
+    if (!Number.isInteger(parent_id) || parent_id <= 0) return c.json({ detail: '非法的父评论' }, 400);
+    const parent = await c.env.DB.prepare(
+      'SELECT id, target_type, target_id, parent_id FROM messages WHERE id = ?'
+    ).bind(parent_id).first<{ id: number; target_type: string; target_id: number | null; parent_id: number | null }>();
+    if (!parent) return c.json({ detail: '父评论不存在' }, 400);
+    const sameTarget = parent.target_type === target_type
+      && (parent.target_id ?? null) === (target_id ?? null);
+    if (!sameTarget) return c.json({ detail: '回复目标与父评论不一致' }, 400);
+    parentId = parent.parent_id ?? parent.id;
+  }
+  // quote_text 只对日记划线评论有意义；其他目标类型及楼中楼回复直接忽略（存 NULL），不报错
+  const quote = !parentId && target_type === 'diary' && typeof quote_text === 'string' && quote_text.trim()
     ? quote_text.trim()
     : null;
   if (quote && quote.length > 500) return c.json({ detail: '引用内容过长（500 字以内）' }, 400);
   // 日记评论免审核直接发布；site/photo 保持待审核
   const approved = target_type === 'diary' ? 1 : 0;
-  await c.env.DB.prepare('INSERT INTO messages (nickname, content, target_type, target_id, quote_text, is_approved) VALUES (?, ?, ?, ?, ?, ?)')
-    .bind(nickname.trim(), text.trim(), target_type, target_id, quote, approved).run();
+  await c.env.DB.prepare('INSERT INTO messages (nickname, content, target_type, target_id, quote_text, parent_id, is_approved) VALUES (?, ?, ?, ?, ?, ?, ?)')
+    .bind(nickname.trim(), text.trim(), target_type, target_id, quote, parentId, approved).run();
   return approved
     ? c.json({ detail: '评论已发布' }, 201)
     : c.json({ detail: '留言已提交，待审核' }, 202);
+});
+
+// 浏览量上报：upsert 自增，前端用 sessionStorage 去重（同一会话同一目标只报一次）
+const VIEW_TARGET_TYPES = ['album', 'photo', 'diary'];
+content.post('/views', async (c) => {
+  const { target_type, target_id } = await c.req.json<{ target_type?: string; target_id?: unknown }>().catch(() => ({}));
+  const id = typeof target_id === 'string' ? Number(target_id) : target_id;
+  if (!target_type || !VIEW_TARGET_TYPES.includes(target_type)) return c.json({ detail: '非法目标类型' }, 400);
+  if (typeof id !== 'number' || !Number.isInteger(id) || id <= 0) return c.json({ detail: '非法目标 ID' }, 400);
+  await c.env.DB.prepare(
+    `INSERT INTO view_counts (target_type, target_id, count) VALUES (?, ?, 1)
+     ON CONFLICT(target_type, target_id) DO UPDATE SET count = count + 1`
+  ).bind(target_type, id).run();
+  const row = await c.env.DB.prepare('SELECT count FROM view_counts WHERE target_type = ? AND target_id = ?')
+    .bind(target_type, id).first<{ count: number }>();
+  return c.json({ views: row?.count ?? 1 });
+});
+
+// 排行榜：综合浏览与点赞（score = 赞*5 + 浏览），各取前 10；无浏览无点赞的条目不进榜
+const LEADERBOARD_STATS = `
+  LEFT JOIN (SELECT target_id, count AS views FROM view_counts WHERE target_type = ?) v ON v.target_id = t.id
+  LEFT JOIN (SELECT target_id, COUNT(*) AS likes FROM likes WHERE target_type = ? GROUP BY target_id) l ON l.target_id = t.id`;
+const LEADERBOARD_TAIL = `
+  WHERE COALESCE(v.views, 0) + COALESCE(l.likes, 0) > 0
+  ORDER BY score DESC, t.id ASC LIMIT 10`;
+content.get('/leaderboard', async (c) => {
+  const db = c.env.DB;
+  const { results: albums } = await db.prepare(
+    `SELECT t.id, t.title, t.title_en,
+            COALESCE(v.views, 0) AS views, COALESCE(l.likes, 0) AS likes,
+            COALESCE(l.likes, 0) * 5 + COALESCE(v.views, 0) AS score
+     FROM albums t ${LEADERBOARD_STATS} ${LEADERBOARD_TAIL}`
+  ).bind('album', 'album').all();
+  const { results: photos } = await db.prepare(
+    `SELECT t.id, t.album_id, t.filename, t.caption, t.caption_en,
+            COALESCE(v.views, 0) AS views, COALESCE(l.likes, 0) AS likes,
+            COALESCE(l.likes, 0) * 5 + COALESCE(v.views, 0) AS score
+     FROM photos t ${LEADERBOARD_STATS} ${LEADERBOARD_TAIL}`
+  ).bind('photo', 'photo').all();
+  // 日记榜只算已发布的；带 slug 供前端跳转
+  const { results: diaries } = await db.prepare(
+    `SELECT t.id, t.title, t.title_en, t.slug,
+            COALESCE(v.views, 0) AS views, COALESCE(l.likes, 0) AS likes,
+            COALESCE(l.likes, 0) * 5 + COALESCE(v.views, 0) AS score
+     FROM diaries t ${LEADERBOARD_STATS}
+     WHERE t.status = 'published' AND COALESCE(v.views, 0) + COALESCE(l.likes, 0) > 0
+     ORDER BY score DESC, t.id ASC LIMIT 10`
+  ).bind('diary', 'diary').all();
+  return c.json({ albums, photos, diaries });
 });
 
 content.get('/music/albums/:id', async (c) => {

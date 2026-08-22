@@ -8,6 +8,7 @@ export default {
     diaries: 'Diaries',
     music: 'Music',
     points: 'Check-in',
+    ranking: 'Ranking',
     defaultSiteName: 'Our Little Site',
   },
   home: {
@@ -83,6 +84,7 @@ export default {
     submitted: 'Submitted — will appear after review',
     published: 'Comment published',
     empty: 'No messages yet — say something!',
+    reply: 'Reply',
   },
   lightbox: {
     close: 'Close',
@@ -93,6 +95,16 @@ export default {
     like: 'Like',
     liked: 'Liked',
     loginToLike: 'Log in to like',
+  },
+  ranking: {
+    title: 'Leaderboard',
+    loading: 'Loading…',
+    empty: 'Nothing ranked yet — go explore!',
+    albums: 'Top Albums',
+    photos: 'Top Photos',
+    diaries: 'Top Diaries',
+    views: 'Views',
+    likes: 'Likes',
   },
   player: {
     prev: 'Previous',

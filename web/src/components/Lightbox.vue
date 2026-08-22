@@ -2,6 +2,7 @@
 import { computed, ref, watch, onMounted, onUnmounted } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { api } from '../api';
+import { reportView } from '../utils/views';
 import LikeButton from './LikeButton.vue';
 
 const { t } = useI18n();
@@ -19,6 +20,7 @@ const likeState = ref({ count: 0, liked: false });
 watch(current, async (p) => {
   likeState.value = { count: 0, liked: false };
   if (!p?.id) return;
+  reportView('photo', p.id);
   try {
     likeState.value = await api(`/likes?target_type=photo&target_id=${p.id}`);
   } catch { /* 点赞计数加载失败不阻塞看图 */ }
