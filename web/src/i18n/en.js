@@ -95,6 +95,8 @@ export default {
     like: 'Like',
     liked: 'Liked',
     loginToLike: 'Log in to like',
+    max: 'Up to 50 likes per person',
+    unlikeAll: 'Long-press to remove all your likes',
   },
   ranking: {
     title: 'Leaderboard',

@@ -95,6 +95,8 @@ export default {
     like: '赞',
     liked: '已赞',
     loginToLike: '登录后即可点赞',
+    max: '最多只能赞 50 下哦',
+    unlikeAll: '长按取消全部赞',
   },
   ranking: {
     title: '排行榜',
