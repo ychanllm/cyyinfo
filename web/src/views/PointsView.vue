@@ -2,13 +2,13 @@
 import { ref, computed, onMounted } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { LuckyWheel } from '@lucky-canvas/vue';
-import { api } from '../api';
+import { api, apiUpload } from '../api';
 import { confetti } from '../utils/confetti';
 
 const { t } = useI18n();
 
 const me = ref(null);
-const status = ref(null); // {checked_in, streak_day, balance, box_cost, draw_mode, next_points}
+const status = ref(null); // {checked_in, streak_day, balance, box_cost, next_points}
 const prizes = ref([]);
 const myPrizes = ref([]);
 const error = ref('');
@@ -24,7 +24,11 @@ const boxShaking = ref(false); // 盲盒摇晃悬念
 const wheelRef = ref(null); // LuckyWheel 实例
 const pendingPrize = ref(null); // 已抽中、待轮盘停下后展示的奖品
 
-const drawMode = computed(() => status.value?.draw_mode || 'box');
+// 头像
+const avatarInput = ref(null);
+const avatarUploading = ref(false);
+const showAvatarPrompt = ref(false);
+
 const wheelPrizes = computed(() => prizes.value.filter((p) => p.in_box));
 
 // LuckyWheel 配置（手帐暖色系）
@@ -57,6 +61,8 @@ async function load() {
     status.value = statusData;
     prizes.value = prizeList;
     myPrizes.value = myList;
+    // 无头像且本次会话未提示过时，提示设置头像
+    showAvatarPrompt.value = !meData.avatar && !sessionStorage.getItem('avatar_prompt_dismissed');
   } catch (e) {
     error.value = e.message;
   } finally {
@@ -77,10 +83,6 @@ async function checkin() {
   } finally {
     acting.value = false;
   }
-}
-
-async function draw() {
-  return drawMode.value === 'wheel' ? wheelDraw() : boxDraw();
 }
 
 // 盲盒：摇晃 1.5s 制造悬念后弹出结果
@@ -148,6 +150,35 @@ function onWheelEnd() {
   load();
 }
 
+// 头像：点圆形头像/提示条选择图片上传
+function pickAvatar() {
+  avatarInput.value?.click();
+}
+
+function dismissAvatarPrompt() {
+  sessionStorage.setItem('avatar_prompt_dismissed', '1');
+  showAvatarPrompt.value = false;
+}
+
+async function uploadAvatar(e) {
+  const file = e.target.files?.[0];
+  e.target.value = '';
+  if (!file || avatarUploading.value) return;
+  avatarUploading.value = true;
+  error.value = '';
+  try {
+    const form = new FormData();
+    form.append('file', file);
+    const data = await apiUpload('/users/me/avatar', form, false);
+    me.value = { ...me.value, avatar: data.avatar };
+    showAvatarPrompt.value = false;
+  } catch (e2) {
+    error.value = e2.message;
+  } finally {
+    avatarUploading.value = false;
+  }
+}
+
 async function redeem(prize) {
   if (!confirm(t('points.confirmRedeem', { name: prize.name, cost: prize.points_cost }))) return;
   acting.value = true;
@@ -185,15 +216,34 @@ onMounted(load);
     <p v-if="loading" class="hint">{{ t('points.loading') }}</p>
 
     <template v-else-if="status">
+      <!-- 无头像提示条 -->
+      <div v-if="showAvatarPrompt" class="avatar-prompt">
+        <span class="avatar-prompt-text" @click="pickAvatar">{{ t('points.avatarPrompt') }}</span>
+        <button type="button" class="avatar-prompt-close" :aria-label="t('points.dismiss')" @click="dismissAvatarPrompt">×</button>
+      </div>
+
       <!-- 签到卡片 -->
       <section class="card checkin-card">
         <div v-if="status.checked_in" class="stamp" :class="{ animated: justCheckedIn }">
           {{ t('points.stamp') }}
         </div>
         <div class="balance-row">
-          <span class="hello">{{ t('points.hello', { name: me?.username }) }}</span>
+          <span class="hello-wrap">
+            <button
+              type="button"
+              class="avatar-btn"
+              :title="t('points.setAvatar')"
+              :disabled="avatarUploading"
+              @click="pickAvatar"
+            >
+              <img v-if="me?.avatar" :src="`/uploads/${me.avatar}`" class="avatar" :alt="me?.username" />
+              <span v-else class="avatar placeholder">{{ (me?.username || '?').charAt(0).toUpperCase() }}</span>
+            </button>
+            <span class="hello">{{ t('points.hello', { name: me?.username }) }}</span>
+          </span>
           <span class="balance">{{ t('points.balance', { n: status.balance }) }}</span>
         </div>
+        <input ref="avatarInput" type="file" accept="image/*" hidden @change="uploadAvatar" />
         <p class="streak">{{ t('points.streak', { n: status.streak_day }) }}</p>
         <button
           class="btn primary big"
@@ -207,8 +257,21 @@ onMounted(load);
         <p v-if="status.checked_in" class="hint">{{ t('points.tomorrow', { n: status.next_points }) }}</p>
       </section>
 
+      <!-- 盲盒 -->
+      <section class="card box-card">
+        <h3>{{ t('points.boxTitle') }}</h3>
+        <p class="hint">{{ t('points.boxHint', { cost: status.box_cost }) }}</p>
+        <div class="box-visual" :class="{ shaking: boxShaking }" aria-hidden="true">🎁</div>
+        <button
+          class="btn primary"
+          :disabled="acting || status.balance < status.box_cost"
+          @click="boxDraw"
+        >{{ t('points.draw', { cost: status.box_cost }) }}</button>
+        <p v-if="status.balance < status.box_cost" class="hint">{{ t('points.notEnough') }}</p>
+      </section>
+
       <!-- 轮盘抽奖 -->
-      <section v-if="drawMode === 'wheel'" class="card wheel-card">
+      <section class="card wheel-card">
         <h3>{{ t('points.wheelTitle') }}</h3>
         <p class="hint">{{ t('points.boxHint', { cost: status.box_cost }) }}</p>
         <template v-if="wheelPrizes.length">
@@ -220,30 +283,17 @@ onMounted(load);
               :blocks="wheelBlocks"
               :prizes="wheelPrizesConfig"
               :buttons="wheelButtons"
-              @start="draw"
+              @start="wheelDraw"
               @end="onWheelEnd"
             />
           </div>
           <button
             class="btn primary"
             :disabled="acting || status.balance < status.box_cost"
-            @click="draw"
+            @click="wheelDraw"
           >{{ t('points.draw', { cost: status.box_cost }) }}</button>
         </template>
         <p v-else class="hint">{{ t('points.emptyPrizes') }}</p>
-        <p v-if="status.balance < status.box_cost" class="hint">{{ t('points.notEnough') }}</p>
-      </section>
-
-      <!-- 盲盒 -->
-      <section v-else class="card box-card">
-        <h3>{{ t('points.boxTitle') }}</h3>
-        <p class="hint">{{ t('points.boxHint', { cost: status.box_cost }) }}</p>
-        <div class="box-visual" :class="{ shaking: boxShaking }" aria-hidden="true">🎁</div>
-        <button
-          class="btn primary"
-          :disabled="acting || status.balance < status.box_cost"
-          @click="draw"
-        >{{ t('points.draw', { cost: status.box_cost }) }}</button>
         <p v-if="status.balance < status.box_cost" class="hint">{{ t('points.notEnough') }}</p>
       </section>
 
@@ -406,6 +456,62 @@ onMounted(load);
   justify-content: space-between;
   align-items: center;
   margin-bottom: 8px;
+}
+.hello-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.avatar-btn {
+  border: none;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+  border-radius: 50%;
+}
+.avatar-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  object-fit: cover;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 17px;
+  font-weight: 600;
+}
+.avatar.placeholder {
+  background: var(--bg-deep);
+  color: var(--color-text-light);
+}
+.avatar-prompt {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  background: var(--color-card);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 12px 16px;
+  margin-bottom: 20px;
+  font-size: 14px;
+}
+.avatar-prompt-text {
+  cursor: pointer;
+  color: var(--color-primary);
+}
+.avatar-prompt-close {
+  border: none;
+  background: none;
+  font-size: 18px;
+  line-height: 1;
+  color: var(--color-text-light);
+  cursor: pointer;
+  padding: 0 4px;
 }
 .hello {
   font-size: 15px;

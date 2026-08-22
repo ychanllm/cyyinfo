@@ -105,7 +105,7 @@ admin.delete('/users/:id', async (c) => {
 // ---- 注册用户管理（users 表，区别于上面的管理员账号）----
 admin.get('/site-users', async (c) => {
   const { results } = await c.env.DB.prepare(
-    'SELECT id, username, points, created_at FROM users ORDER BY id'
+    'SELECT id, username, points, avatar, created_at FROM users ORDER BY id'
   ).all();
   return c.json(results);
 });
@@ -535,10 +535,18 @@ admin.delete('/music/songs/:id', async (c) => {
 
 // ---- 留言审核 ----
 admin.get('/messages', async (c) => {
-  const pendingOnly = c.req.query('pending') === '1';
+  const conditions: string[] = [];
+  const params: unknown[] = [];
+  if (c.req.query('pending') === '1') conditions.push('is_approved = 0');
+  // 日记编辑页按目标过滤评论（target_type=diary&target_id=N）
+  const targetType = c.req.query('target_type');
+  const targetId = c.req.query('target_id');
+  if (targetType) { conditions.push('target_type = ?'); params.push(targetType); }
+  if (targetId) { conditions.push('target_id = ?'); params.push(Number(targetId)); }
+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
   const { results } = await c.env.DB.prepare(
-    `SELECT * FROM messages ${pendingOnly ? 'WHERE is_approved = 0' : ''} ORDER BY id DESC LIMIT 200`
-  ).all();
+    `SELECT * FROM messages ${where} ORDER BY id DESC LIMIT 200`
+  ).bind(...params).all();
   return c.json(results);
 });
 

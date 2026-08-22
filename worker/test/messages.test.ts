@@ -98,6 +98,30 @@ describe('留言', () => {
     expect(res.status).toBe(400);
   });
 
+  it('管理端可按 target_type/target_id 过滤评论', async () => {
+    await SELF.fetch('http://x/api/messages', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ nickname: '小绿', content: '日记3的评论', target_type: 'diary', target_id: 3 }),
+    });
+    await SELF.fetch('http://x/api/messages', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ nickname: '小绿', content: '日记3的划线', target_type: 'diary', target_id: 3, quote_text: '某句话' }),
+    });
+
+    const headers = { Authorization: `Bearer ${token}` };
+    const list = await (await SELF.fetch('http://x/api/admin/messages?target_type=diary&target_id=3', { headers })).json() as any[];
+    expect(list).toHaveLength(2);
+    expect(list.every((m) => m.target_type === 'diary' && m.target_id === 3)).toBe(true);
+
+    // 其他日记的评论不受影响
+    const other = await (await SELF.fetch('http://x/api/admin/messages?target_type=diary&target_id=999', { headers })).json() as any[];
+    expect(other).toHaveLength(0);
+
+    // 无过滤参数时行为不变（仍能拿到全量列表）
+    const all = await (await SELF.fetch('http://x/api/admin/messages', { headers })).json() as any[];
+    expect(all.length).toBeGreaterThanOrEqual(2);
+  });
+
   it('非 diary 类型的 quote_text 被忽略（存 NULL）', async () => {
     const post = await SELF.fetch('http://x/api/messages', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },

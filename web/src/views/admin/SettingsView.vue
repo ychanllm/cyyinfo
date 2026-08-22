@@ -23,7 +23,6 @@ const checkinBase = ref('10');
 const checkinBonus = ref('5');
 const checkinMax = ref('40');
 const boxCost = ref('100');
-const drawMode = ref('box');
 
 const loading = ref(true);
 const saving = ref(false);
@@ -54,7 +53,6 @@ async function loadSettings() {
     checkinBonus.value = ck.checkin_streak_bonus;
     checkinMax.value = ck.checkin_max_points;
     boxCost.value = ck.box_cost;
-    drawMode.value = ck.draw_mode || 'box';
   } catch (e) {
     error.value = e.message;
   } finally {
@@ -150,7 +148,6 @@ async function saveCheckin() {
         checkin_streak_bonus: Number(checkinBonus.value),
         checkin_max_points: Number(checkinMax.value),
         box_cost: Number(boxCost.value),
-        draw_mode: drawMode.value,
       },
     });
     success.value = t('adminSettings.checkinSaved');
@@ -313,13 +310,6 @@ onMounted(loadSettings);
           <label class="field">
             {{ t('adminSettings.boxCost') }}
             <input v-model="boxCost" type="number" min="1" />
-          </label>
-          <label class="field">
-            {{ t('adminSettings.drawMode') }}
-            <select v-model="drawMode">
-              <option value="box">{{ t('adminSettings.drawModeBox') }}</option>
-              <option value="wheel">{{ t('adminSettings.drawModeWheel') }}</option>
-            </select>
           </label>
           <button type="submit" class="submit-btn" :disabled="saving">
             {{ saving ? t('adminSettings.saving') : t('adminSettings.save') }}

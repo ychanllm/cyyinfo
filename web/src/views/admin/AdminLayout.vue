@@ -13,7 +13,6 @@ const router = useRouter();
 const navItems = computed(() => [
   { to: localize('/admin/photos'), label: t('admin.photos') },
   { to: localize('/admin/diaries'), label: t('admin.diaries') },
-  { to: localize('/admin/diary-categories'), label: t('admin.categories') },
   { to: localize('/admin/music'), label: t('admin.music') },
   { to: localize('/admin/reminders'), label: t('admin.reminders') },
   { to: localize('/admin/messages'), label: t('admin.messages') },

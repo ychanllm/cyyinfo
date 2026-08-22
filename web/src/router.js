@@ -31,7 +31,6 @@ const routes = [
       { path: 'diaries', name: 'admin-diaries', component: () => import('./views/admin/DiariesView.vue') },
       { path: 'diaries/new', name: 'admin-diary-new', component: () => import('./views/admin/DiaryEditView.vue') },
       { path: 'diaries/:id/edit', name: 'admin-diary-edit', component: () => import('./views/admin/DiaryEditView.vue') },
-      { path: 'diary-categories', name: 'admin-diary-categories', component: () => import('./views/admin/DiaryCategoriesView.vue') },
       { path: 'music', name: 'admin-music', component: () => import('./views/admin/MusicView.vue') },
       { path: 'reminders', name: 'admin-reminders', component: () => import('./views/admin/RemindersView.vue') },
       { path: 'messages', name: 'admin-messages', component: () => import('./views/admin/MessagesView.vue') },

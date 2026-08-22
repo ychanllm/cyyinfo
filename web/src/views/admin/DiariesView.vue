@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { api } from '../../api';
 import { localize } from '../../i18n';
+import DiaryCategoriesView from './DiaryCategoriesView.vue';
 
 const { t } = useI18n();
 const router = useRouter();
@@ -11,6 +12,7 @@ const router = useRouter();
 const diaries = ref([]);
 const loading = ref(true);
 const error = ref('');
+const showCategories = ref(false); // 分类管理区块展开状态
 
 async function loadDiaries() {
   loading.value = true;
@@ -54,9 +56,16 @@ onMounted(loadDiaries);
   <div class="diaries-view">
     <div class="head">
       <h2 class="page-title">{{ t('adminDiaries.title') }}</h2>
-      <button class="btn primary" @click="router.push(localize('/admin/diaries/new'))">{{ t('adminDiaries.new') }}</button>
+      <div class="head-actions">
+        <button class="btn" @click="showCategories = !showCategories">
+          {{ showCategories ? t('adminDiaries.collapseCategories') : t('adminDiaries.manageCategories') }}
+        </button>
+        <button class="btn primary" @click="router.push(localize('/admin/diaries/new'))">{{ t('adminDiaries.new') }}</button>
+      </div>
     </div>
     <p v-if="error" class="error">{{ error }}</p>
+
+    <DiaryCategoriesView v-if="showCategories" class="categories-embed" />
 
     <section class="card">
       <p v-if="loading" class="hint">{{ t('adminDiaries.loading') }}</p>
@@ -105,6 +114,18 @@ onMounted(loadDiaries);
 }
 .page-title {
   font-size: 22px;
+}
+.head-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.head-actions .btn {
+  margin-right: 0;
+}
+.categories-embed {
+  display: block;
+  margin-bottom: 20px;
 }
 .error {
   color: #c0392b;

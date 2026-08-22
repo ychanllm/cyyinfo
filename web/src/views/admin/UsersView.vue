@@ -218,6 +218,7 @@ onMounted(() => {
       <table v-else class="user-table">
         <thead>
           <tr>
+            <th class="col-avatar">{{ t('adminUsers.avatar') }}</th>
             <th class="col-username">{{ t('adminUsers.username') }}</th>
             <th class="col-points">{{ t('adminUsers.pointsCol') }}</th>
             <th>{{ t('adminUsers.resetPassword') }}</th>
@@ -227,6 +228,10 @@ onMounted(() => {
         </thead>
         <tbody v-for="u in siteUsers" :key="u.id">
           <tr>
+            <td class="col-avatar">
+              <img v-if="u.avatar" :src="`/uploads/${u.avatar}`" class="avatar-img" :alt="u.username" />
+              <span v-else class="avatar-img placeholder">{{ u.username.charAt(0).toUpperCase() }}</span>
+            </td>
             <td class="col-username">{{ u.username }}</td>
             <td class="col-points">{{ u.points }}</td>
             <td><input v-model="u._newPassword" type="password" :placeholder="t('adminUsers.passwordPh')" /></td>
@@ -239,7 +244,7 @@ onMounted(() => {
             </td>
           </tr>
           <tr v-if="expandedId === u.id" class="detail-row">
-            <td colspan="5">
+            <td colspan="6">
               <p v-if="detail.loading" class="hint">{{ t('adminUsers.loading') }}</p>
               <template v-else>
                 <h4>{{ t('adminUsers.checkinsTitle') }}</h4>
@@ -404,6 +409,24 @@ onMounted(() => {
 }
 .col-points {
   width: 70px;
+}
+.col-avatar {
+  width: 50px;
+}
+.avatar-img {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  object-fit: cover;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 600;
+}
+.avatar-img.placeholder {
+  background: var(--bg-deep);
+  color: var(--color-text-light);
 }
 .detail-row td {
   background: rgba(0, 0, 0, 0.02);

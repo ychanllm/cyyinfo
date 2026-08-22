@@ -4,6 +4,7 @@ import type { Env } from '../types';
 import { signJwt, verifyJwt, userAuth } from '../auth';
 import { rateLimit, clientIp } from '../security';
 import { getSetting } from '../guard';
+import { saveUpload } from '../upload';
 
 const users = new Hono<{ Bindings: Env }>();
 
@@ -59,10 +60,27 @@ users.post('/auth/login', async (c) => {
 
 users.get('/auth/me', userAuth, async (c) => {
   const me = c.get('user') as { id: number; username: string };
-  const row = await c.env.DB.prepare('SELECT id, username, points, created_at FROM users WHERE id = ?')
+  const row = await c.env.DB.prepare('SELECT id, username, points, avatar, created_at FROM users WHERE id = ?')
     .bind(me.id).first();
   if (!row) return c.json({ detail: '用户不存在' }, 404);
   return c.json(row);
+});
+
+// 头像上传：仅图片且 ≤ 2MB，旧头像文件随之删除
+const MAX_AVATAR = 2 * 1024 * 1024;
+users.post('/users/me/avatar', userAuth, async (c) => {
+  const me = c.get('user') as { id: number };
+  const body = await c.req.parseBody();
+  const file = body.file;
+  if (!(file instanceof File)) return c.json({ detail: '缺少文件' }, 400);
+  if (file.size > MAX_AVATAR) return c.json({ detail: '文件过大' }, 400);
+  const { key, error } = await saveUpload(c.env, file, 'image', 'avatars');
+  if (error) return c.json({ detail: error }, 400);
+  const old = await c.env.DB.prepare('SELECT avatar FROM users WHERE id = ?')
+    .bind(me.id).first<{ avatar: string | null }>();
+  await c.env.DB.prepare('UPDATE users SET avatar = ? WHERE id = ?').bind(key!, me.id).run();
+  if (old?.avatar) await c.env.UPLOADS.delete(old.avatar).catch(() => {});
+  return c.json({ avatar: key });
 });
 
 export default users;

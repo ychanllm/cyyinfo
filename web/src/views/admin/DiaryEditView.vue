@@ -32,6 +32,8 @@ const error = ref('');
 const savedTip = ref('');
 const versions = ref([]); // 编辑版本历史（后端 diary_versions）
 const showVersionId = ref(null); // 展开查看某次版本的内容
+const comments = ref([]); // 该篇日记的评论（划线评论 + 整篇评论）
+const commentsLoading = ref(false);
 
 // 每个版本一个不同的颜色，一眼看出是第几次编辑
 const VERSION_COLORS = ['#e74c3c', '#e67e22', '#f1c40f', '#27ae60', '#3498db', '#9b59b6', '#e84393', '#00bcd4'];
@@ -75,6 +77,13 @@ onMounted(async () => {
     error.value = e.message;
   } finally {
     loading.value = false;
+  }
+  // 评论加载失败不阻塞编辑
+  commentsLoading.value = true;
+  try {
+    comments.value = await api(`/admin/messages?target_type=diary&target_id=${diaryId.value}`, { admin: true });
+  } catch { /* 忽略 */ } finally {
+    commentsLoading.value = false;
   }
 });
 
@@ -246,6 +255,22 @@ async function uploadCover(event) {
         <h4 class="vp-title">{{ shownVersion.title }}</h4>
         <div class="md-body" v-html="marked.parse(shownVersion.content_md || '')"></div>
       </div>
+    </section>
+
+    <section v-if="isEdit" class="card comments-card">
+      <span class="label">{{ t('adminDiaryEdit.commentsTitle', { n: comments.length }) }}</span>
+      <p v-if="commentsLoading" class="hint">{{ t('adminDiaryEdit.loading') }}</p>
+      <p v-else-if="!comments.length" class="hint">{{ t('adminDiaryEdit.commentsEmpty') }}</p>
+      <ul v-else class="comment-list">
+        <li v-for="m in comments" :key="m.id" class="comment-item">
+          <blockquote v-if="m.quote_text" class="comment-quote">{{ m.quote_text }}</blockquote>
+          <div class="comment-main">
+            <span class="comment-nick">{{ m.nickname }}</span>
+            <span class="comment-content">{{ m.content }}</span>
+            <span class="comment-time">{{ fmtVersionTime(m.created_at) }}</span>
+          </div>
+        </li>
+      </ul>
     </section>
   </div>
 </template>
@@ -490,6 +515,49 @@ async function uploadCover(event) {
 .vp-title {
   font-size: 16px;
   margin-bottom: 8px;
+}
+.comments-card {
+  margin-top: 20px;
+}
+.comment-list {
+  list-style: none;
+  margin-top: 10px;
+}
+.comment-item {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--color-border);
+  font-size: 14px;
+}
+.comment-item:last-child {
+  border-bottom: none;
+}
+.comment-quote {
+  margin: 0 0 6px;
+  padding: 4px 10px;
+  border-left: 3px solid var(--color-primary);
+  background: var(--bg-deep);
+  border-radius: 4px;
+  color: var(--color-text-light);
+  font-size: 13px;
+}
+.comment-main {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.comment-nick {
+  font-weight: 600;
+  color: var(--color-text);
+}
+.comment-content {
+  flex: 1;
+  min-width: 200px;
+}
+.comment-time {
+  color: var(--color-text-light);
+  font-size: 13px;
+  white-space: nowrap;
 }
 @media (max-width: 960px) {
   .panes {

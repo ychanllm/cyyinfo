@@ -230,8 +230,8 @@ onMounted(loadAlbums);
       <table v-else class="album-table">
         <thead>
           <tr>
-            <th>{{ t('adminPhotos.name') }}</th>
-            <th>{{ t('adminPhotos.desc') }}</th>
+            <th class="col-name">{{ t('adminPhotos.name') }}</th>
+            <th class="col-desc">{{ t('adminPhotos.desc') }}</th>
             <th class="col-sort">{{ t('adminPhotos.sort') }}</th>
             <th class="col-actions">{{ t('adminPhotos.actions') }}</th>
           </tr>
@@ -371,6 +371,7 @@ onMounted(loadAlbums);
   width: 100%;
   border-collapse: collapse;
   font-size: 14px;
+  table-layout: fixed;
 }
 .album-table th {
   text-align: left;
@@ -387,13 +388,9 @@ onMounted(loadAlbums);
 .album-table tr.selected td {
   background: var(--bg-deep);
 }
-.album-table .bi {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
 .album-table input {
   width: 100%;
+  box-sizing: border-box;
   padding: 6px 8px;
   border: 1px solid transparent;
   border-radius: 6px;
@@ -404,12 +401,52 @@ onMounted(loadAlbums);
   border-color: var(--color-primary);
   background: #fff;
 }
+/* 中英文两个输入框在单元格内上下排列，td 保持 table-cell 以保证列对齐 */
+.album-table .bi input {
+  display: block;
+}
+.album-table .bi input + input {
+  margin-top: 4px;
+}
+.col-name {
+  width: 30%;
+}
+.col-desc {
+  width: 30%;
+}
 .col-sort {
   width: 80px;
 }
 .col-actions {
-  width: 260px;
+  width: 220px;
   white-space: nowrap;
+}
+.col-actions .btn:last-child {
+  margin-right: 0;
+}
+@media (max-width: 600px) {
+  .album-table th,
+  .album-table td {
+    padding: 6px 4px;
+  }
+  .col-sort {
+    width: 56px;
+  }
+  /* 窄屏下操作按钮上下堆叠，避免横向溢出 */
+  .col-actions {
+    width: 84px;
+    white-space: normal;
+  }
+  .col-actions .btn {
+    display: block;
+    width: 100%;
+    margin: 0 0 6px;
+    padding: 4px 6px;
+    box-sizing: border-box;
+  }
+  .col-actions .btn:last-child {
+    margin-bottom: 0;
+  }
 }
 .btn {
   border: 1px solid var(--color-border);
