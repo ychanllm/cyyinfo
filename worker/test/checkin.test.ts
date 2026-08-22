@@ -20,7 +20,7 @@ async function reset() {
   await env.DB.prepare('DELETE FROM point_transactions WHERE user_id = ?').bind(user.id).run();
   await env.DB.prepare('UPDATE users SET points = 0 WHERE id = ?').bind(user.id).run();
   // 清理可能残留的设置，确保走默认值
-  await env.DB.prepare("DELETE FROM settings WHERE key IN ('checkin_base_points','checkin_streak_bonus','checkin_max_points','box_cost')").run();
+  await env.DB.prepare("DELETE FROM settings WHERE key IN ('checkin_base_points','checkin_streak_bonus','checkin_max_points','box_cost','draw_mode')").run();
 }
 
 async function checkin() {
@@ -88,5 +88,17 @@ describe('签到', () => {
     expect(status.streak_day).toBe(1);
     expect(status.balance).toBe(10);
     expect(status.next_points).toBe(15);
+  });
+
+  it('status 返回 draw_mode，默认 box，配置 wheel 后生效', async () => {
+    await reset();
+    let status = await (await SELF.fetch('http://x/api/checkin/status', { headers: auth() })).json() as any;
+    expect(status.draw_mode).toBe('box');
+
+    await env.DB.prepare("INSERT INTO settings (key, value) VALUES ('draw_mode', 'wheel')").run();
+    status = await (await SELF.fetch('http://x/api/checkin/status', { headers: auth() })).json() as any;
+    expect(status.draw_mode).toBe('wheel');
+
+    await env.DB.prepare("DELETE FROM settings WHERE key = 'draw_mode'").run();
   });
 });

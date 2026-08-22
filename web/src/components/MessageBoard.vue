@@ -48,7 +48,13 @@ async function submit() {
       },
     });
     content.value = '';
-    notice.value = t('board.submitted');
+    if (props.targetType === 'diary') {
+      // 日记评论免审核，发布后立即刷新显示
+      notice.value = t('board.published');
+      await load();
+    } else {
+      notice.value = t('board.submitted');
+    }
   } catch (e) {
     error.value = e.message;
   } finally {

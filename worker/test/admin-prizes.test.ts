@@ -9,7 +9,7 @@ const auth = () => ({ Authorization: `Bearer ${token}`, 'Content-Type': 'applica
 async function cleanup() {
   await env.DB.prepare('DELETE FROM prize_records').run();
   await env.DB.prepare('DELETE FROM prizes').run();
-  await env.DB.prepare("DELETE FROM settings WHERE key IN ('checkin_base_points','checkin_streak_bonus','checkin_max_points','box_cost')").run();
+  await env.DB.prepare("DELETE FROM settings WHERE key IN ('checkin_base_points','checkin_streak_bonus','checkin_max_points','box_cost','draw_mode')").run();
 }
 
 async function createPrize(body: Record<string, unknown>) {
@@ -123,7 +123,7 @@ describe('签到设置', () => {
     await cleanup();
     const def = await (await SELF.fetch('http://x/api/admin/checkin-settings', { headers: auth() })).json() as any;
     expect(def).toEqual({
-      checkin_base_points: '10', checkin_streak_bonus: '5', checkin_max_points: '40', box_cost: '100',
+      checkin_base_points: '10', checkin_streak_bonus: '5', checkin_max_points: '40', box_cost: '100', draw_mode: 'box',
     });
 
     const upd = await SELF.fetch('http://x/api/admin/checkin-settings', {
@@ -139,7 +139,26 @@ describe('签到设置', () => {
     });
     expect(bad.status).toBe(400);
 
-    await env.DB.prepare("DELETE FROM settings WHERE key IN ('checkin_base_points','checkin_streak_bonus','checkin_max_points','box_cost')").run();
+    await env.DB.prepare("DELETE FROM settings WHERE key IN ('checkin_base_points','checkin_streak_bonus','checkin_max_points','box_cost','draw_mode')").run();
+  });
+
+  it('draw_mode 读写与非法值拒绝', async () => {
+    await cleanup();
+    const upd = await SELF.fetch('http://x/api/admin/checkin-settings', {
+      method: 'PUT', headers: auth(), body: JSON.stringify({ draw_mode: 'wheel' }),
+    });
+    expect(upd.status).toBe(200);
+    const after = await (await SELF.fetch('http://x/api/admin/checkin-settings', { headers: auth() })).json() as any;
+    expect(after.draw_mode).toBe('wheel');
+
+    const bad = await SELF.fetch('http://x/api/admin/checkin-settings', {
+      method: 'PUT', headers: auth(), body: JSON.stringify({ draw_mode: 'lucky' }),
+    });
+    expect(bad.status).toBe(400);
+    const unchanged = await (await SELF.fetch('http://x/api/admin/checkin-settings', { headers: auth() })).json() as any;
+    expect(unchanged.draw_mode).toBe('wheel');
+
+    await env.DB.prepare("DELETE FROM settings WHERE key = 'draw_mode'").run();
   });
 
   it('非法值不产生部分写入', async () => {

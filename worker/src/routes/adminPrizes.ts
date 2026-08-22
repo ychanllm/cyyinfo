@@ -141,6 +141,7 @@ const CHECKIN_DEFAULTS: Record<string, string> = {
   checkin_streak_bonus: '5',
   checkin_max_points: '40',
   box_cost: '100',
+  draw_mode: 'box',
 };
 
 ap.get('/checkin-settings', async (c) => {
@@ -157,6 +158,11 @@ ap.put('/checkin-settings', async (c) => {
   for (const k of Object.keys(CHECKIN_DEFAULTS)) {
     const v = body[k];
     if (v === undefined) continue;
+    if (k === 'draw_mode') {
+      if (v !== 'box' && v !== 'wheel') return c.json({ detail: 'draw_mode 必须是 box 或 wheel' }, 400);
+      writes.push([k, String(v)]);
+      continue;
+    }
     const n = Number(v);
     if (!Number.isInteger(n) || n <= 0) return c.json({ detail: `${k} 必须是正整数` }, 400);
     writes.push([k, String(n)]);

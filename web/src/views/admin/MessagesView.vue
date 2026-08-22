@@ -38,6 +38,16 @@ async function approve(msg) {
   }
 }
 
+async function hide(msg) {
+  error.value = '';
+  try {
+    await api(`/admin/messages/${msg.id}/hide`, { method: 'POST', admin: true });
+    await loadMessages();
+  } catch (e) {
+    error.value = e.message;
+  }
+}
+
 async function remove(msg) {
   if (!confirm(t('adminMessages.confirmDelete', { nickname: msg.nickname }))) return;
   error.value = '';
@@ -99,7 +109,12 @@ onMounted(loadMessages);
         <tbody>
           <tr v-for="msg in messages" :key="msg.id">
             <td class="col-nick">{{ msg.nickname }}</td>
-            <td class="content-cell">{{ msg.content }}</td>
+            <td class="content-cell">
+              <div v-if="msg.quote_text" class="quote-line" :title="t('adminMessages.quoteLabel')">
+                &ldquo;{{ msg.quote_text }}&rdquo;
+              </div>
+              {{ msg.content }}
+            </td>
             <td class="col-target">{{ targetLabel(msg) }}</td>
             <td v-if="tab === 'all'" class="col-status">
               <span class="badge" :class="msg.is_approved ? 'approved' : 'pending'">
@@ -109,6 +124,7 @@ onMounted(loadMessages);
             <td class="col-time">{{ fmtTime(msg.created_at) }}</td>
             <td class="col-actions">
               <button v-if="!msg.is_approved" class="btn primary" @click="approve(msg)">{{ t('adminMessages.approve') }}</button>
+              <button v-else class="btn" @click="hide(msg)">{{ t('adminMessages.hide') }}</button>
               <button class="btn danger" @click="remove(msg)">{{ t('adminMessages.delete') }}</button>
             </td>
           </tr>
@@ -181,6 +197,14 @@ onMounted(loadMessages);
   max-width: 360px;
   white-space: pre-wrap;
   word-break: break-word;
+}
+.quote-line {
+  font-size: 12px;
+  color: var(--color-text-light);
+  border-left: 3px solid var(--color-primary);
+  padding-left: 8px;
+  margin-bottom: 6px;
+  white-space: normal;
 }
 .col-target {
   width: 100px;

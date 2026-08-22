@@ -83,21 +83,6 @@ async function saveAlbum(album) {
   }
 }
 
-async function removeAlbum(album) {
-  if (!confirm(t('adminPhotos.confirmDeleteAlbum', { title: album.title }))) return;
-  error.value = '';
-  try {
-    await api(`/admin/albums/${album.id}`, { method: 'DELETE', admin: true });
-    if (current.value?.id === album.id) {
-      current.value = null;
-      photos.value = [];
-    }
-    await loadAlbums();
-  } catch (e) {
-    error.value = e.message;
-  }
-}
-
 async function selectAlbum(album) {
   current.value = album;
   photosLoading.value = true;
@@ -219,17 +204,6 @@ async function setCover(photo) {
   }
 }
 
-async function removePhoto(photo) {
-  if (!confirm(t('adminPhotos.confirmDeletePhoto'))) return;
-  error.value = '';
-  try {
-    await api(`/admin/photos/${photo.id}`, { method: 'DELETE', admin: true });
-    await reloadPhotos();
-  } catch (e) {
-    error.value = e.message;
-  }
-}
-
 onMounted(loadAlbums);
 </script>
 
@@ -276,7 +250,6 @@ onMounted(loadAlbums);
             <td class="col-actions">
               <button class="btn" @click="saveAlbum(album)">{{ t('adminPhotos.save') }}</button>
               <button class="btn primary" @click="selectAlbum(album)">{{ t('adminPhotos.managePhotos') }}</button>
-              <button class="btn danger" @click="removeAlbum(album)">{{ t('adminPhotos.delete') }}</button>
             </td>
           </tr>
         </tbody>
@@ -341,7 +314,6 @@ onMounted(loadAlbums);
               >
                 {{ current.cover_photo_id === photo.id ? t('adminPhotos.currentCover') : t('adminPhotos.setCover') }}
               </button>
-              <button class="btn danger" @click="removePhoto(photo)">{{ t('adminPhotos.delete') }}</button>
             </div>
           </div>
         </div>

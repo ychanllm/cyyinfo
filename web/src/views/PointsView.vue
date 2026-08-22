@@ -1,12 +1,14 @@
 <script setup>
-import { ref, onMounted } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { LuckyWheel } from '@lucky-canvas/vue';
 import { api } from '../api';
+import { confetti } from '../utils/confetti';
 
 const { t } = useI18n();
 
 const me = ref(null);
-const status = ref(null); // {checked_in, streak_day, balance, box_cost, next_points}
+const status = ref(null); // {checked_in, streak_day, balance, box_cost, draw_mode, next_points}
 const prizes = ref([]);
 const myPrizes = ref([]);
 const error = ref('');
@@ -15,6 +17,31 @@ const acting = ref(false); // 防重复点击
 
 // 盲盒结果弹窗
 const boxResult = ref(null);
+
+// 特效状态
+const justCheckedIn = ref(false); // 本次打卡成功 → 印章砸下动画
+const boxShaking = ref(false); // 盲盒摇晃悬念
+const wheelRef = ref(null); // LuckyWheel 实例
+const pendingPrize = ref(null); // 已抽中、待轮盘停下后展示的奖品
+
+const drawMode = computed(() => status.value?.draw_mode || 'box');
+const wheelPrizes = computed(() => prizes.value.filter((p) => p.in_box));
+
+// LuckyWheel 配置（手帐暖色系）
+const WHEEL_COLORS = ['#fff7ec', '#ffe9d6', '#fde3cf', '#f9ddc4'];
+const wheelBlocks = [{ padding: '10px', background: '#E88D67' }];
+const wheelPrizesConfig = computed(() =>
+  wheelPrizes.value.map((p, i) => ({
+    background: WHEEL_COLORS[i % WHEEL_COLORS.length],
+    fonts: [{ text: p.name, top: '16%', fontSize: '13px', fontColor: '#BE6A3E', fontWeight: '600' }],
+  }))
+);
+const wheelButtons = [{
+  radius: '30%',
+  background: '#E88D67',
+  pointer: true,
+  fonts: [{ text: 'GO', top: '-10px', fontSize: '18px', fontColor: '#fff', fontWeight: '700' }],
+}];
 
 async function load() {
   loading.value = true;
@@ -42,6 +69,8 @@ async function checkin() {
   error.value = '';
   try {
     await api('/checkin', { method: 'POST' });
+    justCheckedIn.value = true;
+    confetti();
     await load();
   } catch (e) {
     error.value = e.message;
@@ -51,18 +80,72 @@ async function checkin() {
 }
 
 async function draw() {
+  return drawMode.value === 'wheel' ? wheelDraw() : boxDraw();
+}
+
+// 盲盒：摇晃 1.5s 制造悬念后弹出结果
+async function boxDraw() {
   acting.value = true;
   error.value = '';
   boxResult.value = null;
+  boxShaking.value = true;
   try {
-    const data = await api('/box/draw', { method: 'POST' });
+    const [data] = await Promise.all([
+      api('/box/draw', { method: 'POST' }),
+      new Promise((r) => setTimeout(r, 1500)),
+    ]);
     boxResult.value = data.prize;
+    confetti();
     await load();
   } catch (e) {
     error.value = e.message;
   } finally {
+    boxShaking.value = false;
     acting.value = false;
   }
+}
+
+// 轮盘：先拿中奖结果，再 play() → stop(中奖 index)，停下后弹结果
+async function wheelDraw() {
+  if (acting.value) return;
+  if (status.value && status.value.balance < status.value.box_cost) {
+    error.value = t('points.notEnough');
+    return;
+  }
+  acting.value = true;
+  error.value = '';
+  boxResult.value = null;
+  let data;
+  try {
+    data = await api('/box/draw', { method: 'POST' });
+  } catch (e) {
+    error.value = e.message;
+    acting.value = false;
+    return;
+  }
+  const idx = wheelPrizes.value.findIndex((p) => p.id === data.prize.id);
+  if (idx < 0 || !wheelRef.value) {
+    // 兜底：中奖奖品不在轮盘列表，直接弹窗
+    boxResult.value = data.prize;
+    confetti();
+    acting.value = false;
+    await load();
+    return;
+  }
+  pendingPrize.value = data.prize;
+  wheelRef.value.play();
+  // 先转一会儿再停在中奖项
+  setTimeout(() => wheelRef.value?.stop(idx), 2200);
+}
+
+// 轮盘停止回调：弹出中奖结果 + 撒花
+function onWheelEnd() {
+  if (!pendingPrize.value) return;
+  boxResult.value = pendingPrize.value;
+  pendingPrize.value = null;
+  confetti();
+  acting.value = false;
+  load();
 }
 
 async function redeem(prize) {
@@ -104,6 +187,9 @@ onMounted(load);
     <template v-else-if="status">
       <!-- 签到卡片 -->
       <section class="card checkin-card">
+        <div v-if="status.checked_in" class="stamp" :class="{ animated: justCheckedIn }">
+          {{ t('points.stamp') }}
+        </div>
         <div class="balance-row">
           <span class="hello">{{ t('points.hello', { name: me?.username }) }}</span>
           <span class="balance">{{ t('points.balance', { n: status.balance }) }}</span>
@@ -121,10 +207,38 @@ onMounted(load);
         <p v-if="status.checked_in" class="hint">{{ t('points.tomorrow', { n: status.next_points }) }}</p>
       </section>
 
+      <!-- 轮盘抽奖 -->
+      <section v-if="drawMode === 'wheel'" class="card wheel-card">
+        <h3>{{ t('points.wheelTitle') }}</h3>
+        <p class="hint">{{ t('points.boxHint', { cost: status.box_cost }) }}</p>
+        <template v-if="wheelPrizes.length">
+          <div class="wheel-wrap">
+            <LuckyWheel
+              ref="wheelRef"
+              width="240px"
+              height="240px"
+              :blocks="wheelBlocks"
+              :prizes="wheelPrizesConfig"
+              :buttons="wheelButtons"
+              @start="draw"
+              @end="onWheelEnd"
+            />
+          </div>
+          <button
+            class="btn primary"
+            :disabled="acting || status.balance < status.box_cost"
+            @click="draw"
+          >{{ t('points.draw', { cost: status.box_cost }) }}</button>
+        </template>
+        <p v-else class="hint">{{ t('points.emptyPrizes') }}</p>
+        <p v-if="status.balance < status.box_cost" class="hint">{{ t('points.notEnough') }}</p>
+      </section>
+
       <!-- 盲盒 -->
-      <section class="card">
+      <section v-else class="card box-card">
         <h3>{{ t('points.boxTitle') }}</h3>
         <p class="hint">{{ t('points.boxHint', { cost: status.box_cost }) }}</p>
+        <div class="box-visual" :class="{ shaking: boxShaking }" aria-hidden="true">🎁</div>
         <button
           class="btn primary"
           :disabled="acting || status.balance < status.box_cost"
@@ -222,6 +336,70 @@ onMounted(load);
 }
 .checkin-card {
   text-align: center;
+  position: relative;
+  overflow: hidden;
+}
+/* 「已打卡」印章 */
+.stamp {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 78px;
+  height: 78px;
+  border: 3px solid var(--color-primary);
+  border-radius: 50%;
+  color: var(--color-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  transform: rotate(-18deg);
+  opacity: 0.85;
+  pointer-events: none;
+}
+.stamp::after {
+  content: '';
+  position: absolute;
+  inset: 4px;
+  border: 1px solid var(--color-primary);
+  border-radius: 50%;
+}
+/* 打卡成功：旋转 + 缩放砸下 */
+.stamp.animated {
+  animation: stamp-in 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+@keyframes stamp-in {
+  from { transform: rotate(-45deg) scale(2.6); opacity: 0; }
+  to { transform: rotate(-18deg) scale(1); opacity: 0.85; }
+}
+/* 盲盒摇晃跳动 */
+.box-card {
+  text-align: center;
+}
+.box-visual {
+  font-size: 64px;
+  line-height: 1;
+  margin: 8px 0 12px;
+  user-select: none;
+}
+.box-visual.shaking {
+  animation: box-shake 0.5s ease-in-out infinite;
+}
+@keyframes box-shake {
+  0%, 100% { transform: rotate(0deg) translateY(0); }
+  25% { transform: rotate(-8deg) translateY(-6px); }
+  75% { transform: rotate(8deg) translateY(-6px); }
+}
+/* 轮盘 */
+.wheel-card {
+  text-align: center;
+}
+.wheel-wrap {
+  margin: 14px auto;
+  display: flex;
+  justify-content: center;
 }
 .balance-row {
   display: flex;
@@ -355,6 +533,11 @@ onMounted(load);
   text-align: center;
   max-width: 320px;
   width: 100%;
+  animation: pop-in 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+@keyframes pop-in {
+  from { transform: scale(0.5); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
 }
 .modal .prize-img {
   border-radius: 8px;

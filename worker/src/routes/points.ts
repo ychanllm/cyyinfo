@@ -11,7 +11,8 @@ async function checkinConfig(db: D1Database) {
   const bonus = Number(await getSetting(db, 'checkin_streak_bonus')) || 5;
   const max = Number(await getSetting(db, 'checkin_max_points')) || 40;
   const boxCost = Number(await getSetting(db, 'box_cost')) || 100;
-  return { base, bonus, max, boxCost };
+  const drawMode = (await getSetting(db, 'draw_mode')) === 'wheel' ? 'wheel' : 'box';
+  return { base, bonus, max, boxCost, drawMode };
 }
 
 // 以 UTC+8 的日历日为签到日
@@ -92,6 +93,7 @@ points.get('/checkin/status', async (c) => {
     streak_day: currentStreak,
     balance: await balanceOf(db, me.id),
     box_cost: cfg.boxCost,
+    draw_mode: cfg.drawMode,
     next_points: streakPoints(cfg, currentStreak + 1),
   });
 });

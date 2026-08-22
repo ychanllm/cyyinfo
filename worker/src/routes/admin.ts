@@ -319,6 +319,11 @@ admin.post('/messages/:id/approve', async (c) => {
   return c.json({ ok: true });
 });
 
+admin.post('/messages/:id/hide', async (c) => {
+  await c.env.DB.prepare('UPDATE messages SET is_approved = 0 WHERE id = ?').bind(c.req.param('id')).run();
+  return c.json({ ok: true });
+});
+
 admin.delete('/messages/:id', async (c) => {
   await c.env.DB.prepare('DELETE FROM messages WHERE id = ?').bind(c.req.param('id')).run();
   return c.json({ ok: true });
