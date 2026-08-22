@@ -11,6 +11,7 @@ const { t } = useI18n();
 const router = useRouter();
 
 const navItems = computed(() => [
+  { to: localize('/admin/stats'), label: t('admin.stats') },
   { to: localize('/admin/photos'), label: t('admin.photos') },
   { to: localize('/admin/diaries'), label: t('admin.diaries') },
   { to: localize('/admin/music'), label: t('admin.music') },

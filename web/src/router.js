@@ -28,6 +28,7 @@ const routes = [
     meta: { admin: true },
     children: [
       { path: '', redirect: (to) => `/${to.params.lang}/admin/photos` },
+      { path: 'stats', name: 'admin-stats', component: () => import('./views/admin/StatsView.vue') },
       { path: 'photos', name: 'admin-photos', component: () => import('./views/admin/PhotosView.vue') },
       { path: 'diaries', name: 'admin-diaries', component: () => import('./views/admin/DiariesView.vue') },
       { path: 'diaries/new', name: 'admin-diary-new', component: () => import('./views/admin/DiaryEditView.vue') },
