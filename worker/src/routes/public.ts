@@ -279,7 +279,7 @@ content.post('/views', async (c) => {
 // 排行榜：综合浏览与点赞（score = 赞*5 + 浏览），各取前 10；无浏览无点赞的条目不进榜
 const LEADERBOARD_STATS = `
   LEFT JOIN (SELECT target_id, count AS views FROM view_counts WHERE target_type = ?) v ON v.target_id = t.id
-  LEFT JOIN (SELECT target_id, COUNT(*) AS likes FROM likes WHERE target_type = ? GROUP BY target_id) l ON l.target_id = t.id`;
+  LEFT JOIN (SELECT target_id, COALESCE(SUM(count), 0) AS likes FROM likes WHERE target_type = ? GROUP BY target_id) l ON l.target_id = t.id`;
 const LEADERBOARD_TAIL = `
   WHERE COALESCE(v.views, 0) + COALESCE(l.likes, 0) > 0
   ORDER BY score DESC, t.id ASC LIMIT 10`;

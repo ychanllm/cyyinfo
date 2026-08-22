@@ -7,6 +7,8 @@ import { contentGuard } from '../guard';
 const likes = new Hono<{ Bindings: Env }>();
 
 const TARGET_TYPES = ['album', 'photo', 'diary', 'message'];
+const MAX_PER_USER = 50; // 单用户单目标连赞上限
+const MAX_DELTA = 10;    // 单次 burst 最大增量
 
 function parseTarget(type: string | undefined, idRaw: unknown): { type: string; id: number } | null {
   const id = typeof idRaw === 'string' ? Number(idRaw) : idRaw;
@@ -16,7 +18,7 @@ function parseTarget(type: string | undefined, idRaw: unknown): { type: string; 
 }
 
 async function countOf(db: D1Database, type: string, id: number): Promise<number> {
-  const row = await db.prepare('SELECT COUNT(*) AS n FROM likes WHERE target_type = ? AND target_id = ?')
+  const row = await db.prepare('SELECT COALESCE(SUM(count), 0) AS n FROM likes WHERE target_type = ? AND target_id = ?')
     .bind(type, id).first<{ n: number }>();
   return row?.n ?? 0;
 }
@@ -51,6 +53,24 @@ likes.post('/toggle', userAuth, async (c) => {
   return c.json({ liked, count: await countOf(db, target.type, target.id) });
 });
 
+// 连赞：同一用户可累加多个赞（需登录用户），单用户单目标上限 50
+likes.post('/burst', userAuth, async (c) => {
+  const me = c.get('user') as { id: number };
+  const body = await c.req.json<{ target_type?: string; target_id?: number; delta?: number }>().catch(() => ({}));
+  const target = parseTarget(body.target_type, body.target_id);
+  if (!target) return c.json({ detail: '非法点赞目标' }, 400);
+  const delta = body.delta;
+  if (typeof delta !== 'number' || !Number.isInteger(delta) || delta < 1 || delta > MAX_DELTA) {
+    return c.json({ detail: '非法 delta' }, 400);
+  }
+  const db = c.env.DB;
+  await db.prepare(
+    `INSERT INTO likes (user_id, target_type, target_id, count) VALUES (?, ?, ?, MIN(?, ?))
+     ON CONFLICT(user_id, target_type, target_id) DO UPDATE SET count = MIN(count + ?, ?)`
+  ).bind(me.id, target.type, target.id, delta, MAX_PER_USER, delta, MAX_PER_USER).run();
+  return c.json({ liked: true, count: await countOf(db, target.type, target.id) });
+});
+
 // 单个目标的计数（与公开内容同一鉴权层级；liked 仅对登录用户有意义）
 likes.get('/', contentGuard, async (c) => {
   const target = parseTarget(c.req.query('target_type'), c.req.query('target_id'));
@@ -77,7 +97,7 @@ likes.get('/batch', contentGuard, async (c) => {
   const db = c.env.DB;
   const placeholders = ids.map(() => '?').join(',');
   const { results: counts } = await db.prepare(
-    `SELECT target_id, COUNT(*) AS n FROM likes WHERE target_type = ? AND target_id IN (${placeholders}) GROUP BY target_id`
+    `SELECT target_id, COALESCE(SUM(count), 0) AS n FROM likes WHERE target_type = ? AND target_id IN (${placeholders}) GROUP BY target_id`
   ).bind(type, ...ids).all<{ target_id: number; n: number }>();
   const countMap = new Map(counts.map((r) => [r.target_id, r.n]));
 

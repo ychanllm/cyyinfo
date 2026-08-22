@@ -103,4 +103,58 @@ describe('点赞', () => {
     await toggle(alice, 'album', 9004);
     await toggle(bob, 'album', 9003);
   });
+
+  const burst = (user: { token: string }, target_type: string, target_id: number, delta: number) =>
+    SELF.fetch('http://x/api/likes/burst', {
+      method: 'POST',
+      headers: auth(user),
+      body: JSON.stringify({ target_type, target_id, delta }),
+    });
+
+  it('burst：首次创建行并累加，计数为 SUM(count)', async () => {
+    let res = await burst(alice, 'diary', 9100, 3);
+    expect(res.status).toBe(200);
+    expect(await res.json() as any).toEqual({ liked: true, count: 3 });
+
+    res = await burst(alice, 'diary', 9100, 5);
+    expect(await res.json() as any).toEqual({ liked: true, count: 8 });
+
+    // 另一用户累加同一目标
+    res = await burst(bob, 'diary', 9100, 2);
+    expect(await res.json() as any).toEqual({ liked: true, count: 10 });
+
+    const get = await SELF.fetch('http://x/api/likes?target_type=diary&target_id=9100', { headers: auth(alice) });
+    expect(await get.json() as any).toEqual({ count: 10, liked: true });
+
+    const batch = await SELF.fetch('http://x/api/likes/batch?target_type=diary&ids=9100', { headers: auth(bob) });
+    expect(await batch.json() as any).toEqual({ '9100': { count: 10, liked: true } });
+
+    await toggle(alice, 'diary', 9100); // 清理（删 alice 行，剩 bob 的 2）
+    const after = await SELF.fetch('http://x/api/likes?target_type=diary&target_id=9100');
+    expect((await after.json() as any).count).toBe(2);
+    await toggle(bob, 'diary', 9100);
+  });
+
+  it('burst：delta 非法返回 400，未登录 401', async () => {
+    expect((await burst(alice, 'diary', 9101, 0)).status).toBe(400);
+    expect((await burst(alice, 'diary', 9101, 11)).status).toBe(400);
+    expect((await burst(alice, 'diary', 9101, 1.5)).status).toBe(400);
+    expect((await burst(alice, 'song', 9101, 1)).status).toBe(400);
+    const anon = await SELF.fetch('http://x/api/likes/burst', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ target_type: 'diary', target_id: 9101, delta: 1 }),
+    });
+    expect(anon.status).toBe(401);
+  });
+
+  it('burst：单用户上限 50 钳制', async () => {
+    for (let i = 0; i < 6; i++) await burst(alice, 'photo', 9102, 10); // 60 > 50
+    const get = await SELF.fetch('http://x/api/likes?target_type=photo&target_id=9102', { headers: auth(alice) });
+    const data = await get.json() as any;
+    expect(data).toEqual({ count: 50, liked: true });
+    await toggle(alice, 'photo', 9102); // 清理
+    const cleaned = await SELF.fetch('http://x/api/likes?target_type=photo&target_id=9102');
+    expect((await cleaned.json() as any).count).toBe(0);
+  });
 });
