@@ -8,6 +8,7 @@ import LikeButton from './LikeButton.vue';
 const { t } = useI18n();
 const props = defineProps({
   photos: { type: Array, default: () => [] }, // [{ id, filename, caption }]
+  albumLink: { type: Function, default: null }, // (photo) => path，传了显示「在相册中查看」
 });
 const index = defineModel('index', { type: Number, default: null });
 
@@ -64,6 +65,11 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown));
         :liked="likeState.liked"
         @update="likeState = $event"
       />
+      <router-link
+        v-if="albumLink && current?.album_id"
+        class="album-link"
+        :to="albumLink(current)"
+      >{{ t('lightbox.viewInAlbum') }}</router-link>
     </figure>
     <button v-if="photos.length > 1" class="arrow right" :aria-label="t('lightbox.next')" @click="next">&#8250;</button>
   </div>
@@ -135,5 +141,16 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown));
 }
 .arrow.right {
   right: 16px;
+}
+.album-link {
+  color: #f3ece2;
+  font-size: 13px;
+  padding: 4px 14px;
+  border: 1px solid rgba(243, 236, 226, 0.4);
+  border-radius: 999px;
+  text-decoration: none;
+}
+.album-link:hover {
+  background: rgba(255, 253, 249, 0.12);
 }
 </style>

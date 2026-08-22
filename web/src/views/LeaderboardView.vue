@@ -3,6 +3,7 @@ import { ref, computed, onMounted } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { api } from '../api';
 import { i18n, localize } from '../i18n';
+import Lightbox from '../components/Lightbox.vue';
 
 const { t } = useI18n();
 const board = ref(null);
@@ -17,8 +18,12 @@ const medals = ['🥇', '🥈', '🥉'];
 const rankLabel = (i) => medals[i] || String(i + 1);
 
 const albumLink = (a) => localize(`/albums/${a.id}`);
-const photoLink = (p) => localize(`/albums/${p.album_id}`);
 const diaryLink = (d) => localize(`/diaries/${d.slug || d.id}`);
+
+// 照片榜：点击缩略图页内灯箱放大；灯箱内可跳转到相册对应照片
+const lightboxIndex = ref(null);
+const boardPhotos = computed(() => board.value?.photos ?? []);
+const photoAlbumLink = (p) => localize(`/albums/${p.album_id}?photo=${p.id}`);
 
 onMounted(async () => {
   try {
@@ -59,7 +64,7 @@ onMounted(async () => {
         <h2 class="card-title">{{ t('ranking.photos') }}</h2>
         <ol v-if="board?.photos?.length" class="list">
           <li v-for="(p, i) in board.photos" :key="p.id">
-            <router-link :to="photoLink(p)" class="item">
+            <button type="button" class="item item-btn" @click="lightboxIndex = i">
               <span class="rank" :class="{ medal: i < 3 }">{{ rankLabel(i) }}</span>
               <img :src="`/uploads/${p.filename}`" :alt="pickCaption(p)" class="thumb" loading="lazy" />
               <span class="name">{{ pickCaption(p) }}</span>
@@ -67,7 +72,7 @@ onMounted(async () => {
                 <span class="stat" :title="t('ranking.views')">👁 {{ p.views }}</span>
                 <span class="stat" :title="t('ranking.likes')">♥ {{ p.likes }}</span>
               </span>
-            </router-link>
+            </button>
           </li>
         </ol>
         <p v-else class="empty">{{ t('ranking.empty') }}</p>
@@ -90,6 +95,8 @@ onMounted(async () => {
         </ol>
         <p v-else class="empty">{{ t('ranking.empty') }}</p>
       </section>
+
+      <Lightbox :photos="boardPhotos" v-model:index="lightboxIndex" :album-link="photoAlbumLink" />
     </div>
   </div>
 </template>
@@ -149,6 +156,14 @@ onMounted(async () => {
 }
 .item:hover {
   background: var(--bg-deep);
+}
+.item-btn {
+  width: 100%;
+  border: none;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
 }
 .rank {
   flex: 0 0 28px;

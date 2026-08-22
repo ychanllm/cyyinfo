@@ -90,6 +90,7 @@ export default {
     close: '关闭',
     prev: '上一张',
     next: '下一张',
+    viewInAlbum: '在相册中查看',
   },
   likes: {
     like: '赞',

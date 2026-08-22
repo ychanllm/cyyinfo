@@ -90,6 +90,7 @@ export default {
     close: 'Close',
     prev: 'Previous',
     next: 'Next',
+    viewInAlbum: 'View in album',
   },
   likes: {
     like: 'Like',

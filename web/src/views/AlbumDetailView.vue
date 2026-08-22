@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, onUnmounted, watch } from 'vue';
+import { ref, nextTick, onMounted, onUnmounted, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { api } from '../api';
@@ -36,6 +36,17 @@ async function loadLikes() {
 const carouselEl = ref(null);
 const activeIndex = ref(0);
 
+// 从排行榜跳入：?photo=<id> 直接定位到对应拍立得（instant，不播平滑动画）
+async function locateFromQuery() {
+  const pid = Number(route.query.photo);
+  if (!pid || !album.value?.photos?.length) return;
+  const i = album.value.photos.findIndex((p) => p.id === pid);
+  if (i < 0) return; // 照片已删除/不在本相册：忽略参数
+  activeIndex.value = i;
+  await nextTick();
+  carouselEl.value?.children[i]?.scrollIntoView({ behavior: 'auto', inline: 'center' });
+}
+
 async function load() {
   loading.value = true;
   error.value = '';
@@ -44,6 +55,7 @@ async function load() {
     album.value = await api(`/albums/${route.params.id}`);
     reportView('album', album.value.id);
     loadLikes();
+    locateFromQuery();
   } catch (e) {
     error.value = e.message || '加载失败';
   } finally {
