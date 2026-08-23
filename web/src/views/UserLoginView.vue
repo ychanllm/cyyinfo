@@ -3,6 +3,7 @@ import { ref, computed, onMounted } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { api, setUserToken, getGuestToken, getAdminToken } from '../api';
+import { loadMe } from '../me';
 import { localize } from '../i18n';
 import { autoPlayMusic } from '../player';
 
@@ -52,6 +53,9 @@ async function submit() {
     const path = mode.value === 'login' ? '/auth/login' : '/auth/register';
     const data = await api(path, { method: 'POST', body: { username: name, password: password.value } });
     setUserToken(data.token);
+    // 新登录视为新会话：重置无头像提示的关闭标记，保证登录后重新提醒
+    sessionStorage.removeItem('avatar_prompt_dismissed');
+    await loadMe();
     router.replace(redirectTarget.value);
     autoPlayMusic();
   } catch (e) {

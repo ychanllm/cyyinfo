@@ -3,6 +3,7 @@ import { ref, computed, onMounted } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { LuckyWheel } from '@lucky-canvas/vue';
 import { api, apiUpload } from '../api';
+import { me as sharedMe } from '../me';
 import { confetti } from '../utils/confetti';
 
 const { t } = useI18n();
@@ -58,6 +59,8 @@ async function load() {
       api('/my/prizes'),
     ]);
     me.value = meData;
+    // 同步全局共享用户状态（NavBar 左上角头像）
+    sharedMe.value = meData;
     status.value = statusData;
     prizes.value = prizeList;
     myPrizes.value = myList;
@@ -171,6 +174,7 @@ async function uploadAvatar(e) {
     form.append('file', file);
     const data = await apiUpload('/users/me/avatar', form, false);
     me.value = { ...me.value, avatar: data.avatar };
+    sharedMe.value = me.value;
     showAvatarPrompt.value = false;
   } catch (e2) {
     error.value = e2.message;
