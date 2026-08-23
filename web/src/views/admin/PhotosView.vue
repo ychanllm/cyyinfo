@@ -204,6 +204,21 @@ async function setCover(photo) {
   }
 }
 
+// 隐藏/恢复：只改数据库标记，R2 文件保留；隐藏后前台不再显示
+async function toggleHidden(photo) {
+  error.value = '';
+  try {
+    await api(`/admin/photos/${photo.id}`, {
+      method: 'PUT',
+      admin: true,
+      body: { hidden: !photo.hidden },
+    });
+    photo.hidden = photo.hidden ? 0 : 1;
+  } catch (e) {
+    error.value = e.message;
+  }
+}
+
 onMounted(loadAlbums);
 </script>
 
@@ -274,8 +289,13 @@ onMounted(loadAlbums);
       <p v-if="photosLoading" class="hint">{{ t('adminPhotos.loading') }}</p>
       <p v-else-if="!photos.length" class="hint">{{ t('adminPhotos.noPhotos') }}</p>
       <div v-else class="grid">
-        <div v-for="photo in photos" :key="photo.id" class="cell">
-          <img :src="`/uploads/${photo.filename}`" :alt="photo.caption || ''" class="img" loading="lazy" />
+        <div v-for="photo in photos" :key="photo.id" class="cell" :class="{ 'is-hidden': photo.hidden }">
+          <div class="img-wrap">
+            <img :src="`/uploads/${photo.filename}`" :alt="photo.caption || ''" class="img" loading="lazy" />
+            <span class="status-badge" :class="{ hidden: photo.hidden }">
+              {{ photo.hidden ? t('adminPhotos.statusHidden') : t('adminPhotos.statusVisible') }}
+            </span>
+          </div>
           <div class="cell-body">
             <div class="caption-row">
               <input
@@ -313,6 +333,9 @@ onMounted(loadAlbums);
                 @click="setCover(photo)"
               >
                 {{ current.cover_photo_id === photo.id ? t('adminPhotos.currentCover') : t('adminPhotos.setCover') }}
+              </button>
+              <button class="btn" :class="{ danger: !photo.hidden }" @click="toggleHidden(photo)">
+                {{ photo.hidden ? t('adminPhotos.unhide') : t('adminPhotos.hide') }}
               </button>
             </div>
           </div>
@@ -522,6 +545,26 @@ onMounted(loadAlbums);
   border-radius: 8px;
   overflow: hidden;
   background: #fff;
+}
+.cell.is-hidden .img {
+  opacity: 0.4;
+}
+.img-wrap {
+  position: relative;
+}
+.status-badge {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  background: rgba(255, 255, 255, 0.85);
+  color: #1e8e4f;
+}
+.status-badge.hidden {
+  background: rgba(30, 24, 18, 0.75);
+  color: #f3ece2;
 }
 .img {
   width: 100%;

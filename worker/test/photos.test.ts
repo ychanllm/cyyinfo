@@ -51,4 +51,58 @@ describe('相册与照片', () => {
     const res = await SELF.fetch('http://x/api/admin/photos', { method: 'POST', headers: auth(), body: form });
     expect(res.status).toBe(400);
   });
+
+  it('隐藏照片：前台列表/封面不显示，后台可见，恢复后重现，R2 文件保留', async () => {
+    const create = await SELF.fetch('http://x/api/admin/albums', {
+      method: 'POST', headers: { ...auth(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: '隐藏测试' }),
+    });
+    const album = await create.json() as any;
+    const jpeg = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01, 0xff, 0xd9]);
+    const uploadPhoto = async (caption: string) => {
+      const form = new FormData();
+      form.append('file', new File([jpeg], 'a.jpg', { type: 'image/jpeg' }));
+      form.append('album_id', String(album.id));
+      form.append('caption', caption);
+      return (await (await SELF.fetch('http://x/api/admin/photos', { method: 'POST', headers: auth(), body: form })).json()) as any;
+    };
+    const p1 = await uploadPhoto('要隐藏的');
+    const p2 = await uploadPhoto('正常的');
+
+    // 把 p1 设为封面
+    await SELF.fetch(`http://x/api/admin/albums/${album.id}/cover`, {
+      method: 'POST', headers: { ...auth(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ photo_id: p1.id }),
+    });
+
+    // 隐藏 p1
+    const hide = await SELF.fetch(`http://x/api/admin/photos/${p1.id}`, {
+      method: 'PUT', headers: { ...auth(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ hidden: true }),
+    });
+    expect(hide.status).toBe(200);
+
+    // 前台：照片列表只剩 p2；封面因 p1 隐藏而为空
+    const detail = await (await SELF.fetch(`http://x/api/albums/${album.id}`)).json() as any;
+    expect(detail.photos.map((p: any) => p.id)).toEqual([p2.id]);
+    expect(detail.cover_filename).toBeNull();
+
+    // 后台：两张都在，p1 带 hidden 标记
+    const adminDetail = await (await SELF.fetch(`http://x/api/admin/albums/${album.id}`, { headers: auth() })).json() as any;
+    expect(adminDetail.photos).toHaveLength(2);
+    expect(adminDetail.photos.find((p: any) => p.id === p1.id).hidden).toBe(1);
+    expect(adminDetail.photos.find((p: any) => p.id === p2.id).hidden).toBe(0);
+
+    // R2 文件未删
+    expect((await SELF.fetch(`http://x/uploads/${p1.filename}`)).status).toBe(200);
+
+    // 恢复后前台重新可见
+    await SELF.fetch(`http://x/api/admin/photos/${p1.id}`, {
+      method: 'PUT', headers: { ...auth(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ hidden: false }),
+    });
+    const restored = await (await SELF.fetch(`http://x/api/albums/${album.id}`)).json() as any;
+    expect(restored.photos).toHaveLength(2);
+    expect(restored.cover_filename).toBe(p1.filename);
+  });
 });

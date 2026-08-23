@@ -3,6 +3,7 @@ import type { Env } from '../types';
 import { adminAuth } from '../auth';
 import { getSetting, setSetting } from '../guard';
 import { saveUpload } from '../upload';
+import { logAudit } from '../audit';
 
 const ap = new Hono<{ Bindings: Env }>();
 
@@ -33,6 +34,7 @@ ap.post('/prizes', async (c) => {
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
   ).bind(name.trim(), name_en.trim(), description.trim(), description_en.trim(),
     points_cost, box_weight, stock, sort_order).run();
+  await logAudit(c.env.DB, 'prize_create', (c.get('admin') as { username: string }).username, `新增奖品「${name.trim()}」`);
   return c.json({ id: r.meta.last_row_id });
 });
 
@@ -56,6 +58,7 @@ ap.put('/prizes/:id', async (c) => {
   if (setParts.length) {
     params.push(Number(c.req.param('id')));
     await c.env.DB.prepare(`UPDATE prizes SET ${setParts.join(', ')} WHERE id = ?`).bind(...params).run();
+    await logAudit(c.env.DB, 'prize_update', (c.get('admin') as { username: string }).username, `更新奖品#${c.req.param('id')}`);
   }
   return c.json({ ok: true });
 });
@@ -69,6 +72,8 @@ ap.delete('/prizes/:id', async (c) => {
   } else {
     await c.env.DB.prepare('DELETE FROM prizes WHERE id = ?').bind(id).run();
   }
+  await logAudit(c.env.DB, 'prize_delete', (c.get('admin') as { username: string }).username,
+    `删除奖品#${id}${used ? '（有记录引用，软删下架）' : ''}`);
   return c.json({ ok: true });
 });
 
@@ -112,6 +117,7 @@ ap.post('/prize-records/:id/use', async (c) => {
     "UPDATE prize_records SET status = 'used', used_at = datetime('now') WHERE id = ? AND status = 'pending'"
   ).bind(c.req.param('id')).run();
   if (!r.meta.changes) return c.json({ detail: '记录不存在或已处理' }, 409);
+  await logAudit(c.env.DB, 'prize_record_use', (c.get('admin') as { username: string }).username, `标记奖品记录#${c.req.param('id')}已使用`);
   return c.json({ ok: true });
 });
 
@@ -132,6 +138,8 @@ ap.post('/prize-records/:id/cancel', async (c) => {
   await c.env.DB.prepare(
     "INSERT INTO point_transactions (user_id, change, balance_after, type, ref_id) VALUES (?, ?, ?, 'cancel_refund', ?)"
   ).bind(rec.user_id, rec.points_spent, balance, rec.id).run();
+  await logAudit(c.env.DB, 'prize_record_cancel', (c.get('admin') as { username: string }).username,
+    `取消奖品记录#${rec.id}并退款 ${rec.points_spent}分`);
   return c.json({ ok: true });
 });
 
@@ -168,6 +176,10 @@ ap.put('/checkin-settings', async (c) => {
     writes.push([k, String(n)]);
   }
   for (const [k, v] of writes) await setSetting(c.env.DB, k, v);
+  if (writes.length) {
+    await logAudit(c.env.DB, 'settings_update', (c.get('admin') as { username: string }).username,
+      `更新签到设置：${writes.map(([k]) => k).join(', ')}`);
+  }
   return c.json({ ok: true });
 });
 

@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import type { Env } from '../types';
 import { userAuth } from '../auth';
 import { contentGuard, getSetting } from '../guard';
+import { logAudit } from '../audit';
 
 const points = new Hono<{ Bindings: Env }>();
 
@@ -50,7 +51,7 @@ points.use('/prizes', contentGuard); // 奖品列表与站内内容同级：口�
 
 // ---- 签到 ----
 points.post('/checkin', async (c) => {
-  const me = c.get('user') as { id: number };
+  const me = c.get('user') as { id: number; username: string };
   const db = c.env.DB;
   const today = dateStr();
   if (await db.prepare('SELECT id FROM checkins WHERE user_id = ? AND checkin_date = ?').bind(me.id, today).first()) {
@@ -70,6 +71,7 @@ points.post('/checkin', async (c) => {
     await db.prepare(
       "INSERT INTO point_transactions (user_id, change, balance_after, type, ref_id) VALUES (?, ?, ?, 'checkin', ?)"
     ).bind(me.id, earned, balance, ins.meta.last_row_id).run();
+    await logAudit(db, 'checkin', me.username, `签到 第${streak}天 +${earned}分`);
     return c.json({ points_earned: earned, streak_day: streak, balance });
   } catch {
     // UNIQUE(user_id, checkin_date) 冲突 = 并发重复签到
@@ -128,7 +130,7 @@ points.get('/prizes', async (c) => {
 
 // ---- 盲盒 ----
 points.post('/box/draw', async (c) => {
-  const me = c.get('user') as { id: number };
+  const me = c.get('user') as { id: number; username: string };
   const db = c.env.DB;
   const { boxCost } = await checkinConfig(db);
 
@@ -180,6 +182,7 @@ points.post('/box/draw', async (c) => {
     await db.prepare(
       "INSERT INTO point_transactions (user_id, change, balance_after, type, ref_id) VALUES (?, ?, ?, 'box', ?)"
     ).bind(me.id, -boxCost, balance, recordId).run();
+    await logAudit(db, 'box_draw', me.username, `盲盒抽出「${prize.name}」 -${boxCost}分`);
 
     return c.json({
       prize: { id: prize.id, name: prize.name, description: prize.description, image: prize.image },
@@ -194,7 +197,7 @@ points.post('/box/draw', async (c) => {
 
 // ---- 兑换 ----
 points.post('/prizes/:id/redeem', async (c) => {
-  const me = c.get('user') as { id: number };
+  const me = c.get('user') as { id: number; username: string };
   const db = c.env.DB;
   const prize = await db.prepare('SELECT * FROM prizes WHERE id = ? AND is_active = 1')
     .bind(c.req.param('id')).first<PrizeRow & { is_active: number }>();
@@ -231,6 +234,7 @@ points.post('/prizes/:id/redeem', async (c) => {
     await db.prepare(
       "INSERT INTO point_transactions (user_id, change, balance_after, type, ref_id) VALUES (?, ?, ?, 'redeem', ?)"
     ).bind(me.id, -prize.points_cost, balance, recordId).run();
+    await logAudit(db, 'redeem', me.username, `兑换「${prize.name}」 -${prize.points_cost}分`);
 
     return c.json({ record_id: recordId, balance });
   } catch (e) {
@@ -256,11 +260,15 @@ points.get('/my/prizes', async (c) => {
 });
 
 points.post('/my/prizes/:id/use', async (c) => {
-  const me = c.get('user') as { id: number };
+  const me = c.get('user') as { id: number; username: string };
   const r = await c.env.DB.prepare(
     "UPDATE prize_records SET status = 'used', used_at = datetime('now') WHERE id = ? AND user_id = ? AND status = 'pending'"
   ).bind(c.req.param('id'), me.id).run();
   if (!r.meta.changes) return c.json({ detail: '记录不存在或已处理' }, 409);
+  const rec = await c.env.DB.prepare(
+    'SELECT p.name FROM prize_records r JOIN prizes p ON p.id = r.prize_id WHERE r.id = ?'
+  ).bind(c.req.param('id')).first<{ name: string }>();
+  await logAudit(c.env.DB, 'prize_use', me.username, `使用奖品「${rec?.name ?? c.req.param('id')}」`);
   return c.json({ ok: true });
 });
 

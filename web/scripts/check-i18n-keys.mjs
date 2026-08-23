@@ -35,7 +35,8 @@ const missingZh = [], missingEn = [];
 const files = walk(root);
 for (const file of files) {
   const txt = readFileSync(file, 'utf8');
-  const re = /[\$]?t\(\s*['"]([^'"]+)['"]\s*\)/g;
+  // 负向断言：t( 前不能是标识符字符，避免把 closest('mark')、createElement('x') 误当 i18n 调用
+  const re = /(?<![\w$])\$?t\(\s*['"]([^'"]+)['"]\s*\)/g;
   let m;
   while ((m = re.exec(txt))) {
     const key = m[1];

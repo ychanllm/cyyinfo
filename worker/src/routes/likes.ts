@@ -3,6 +3,7 @@ import type { Context, Next } from 'hono';
 import type { Env } from '../types';
 import { verifyJwt } from '../auth';
 import { contentGuard, getSetting } from '../guard';
+import { logAudit } from '../audit';
 
 const likes = new Hono<{ Bindings: Env }>();
 
@@ -45,7 +46,8 @@ async function likerAuth(c: Context<{ Bindings: Env }>, next: Next) {
   }
   const likerId = await resolveLikerId(c.env.DB, payload);
   if (!likerId) return c.json({ detail: '管理员点赞需先在后台「设置」指定点赞归属用户' }, 400);
-  c.set('liker', { id: likerId });
+  // liker.id 是点赞归属（管理员时为归属用户）；liker.username 是实际操作者（写审计日志用）
+  c.set('liker', { id: likerId, username: payload.username as string });
   await next();
 }
 
@@ -59,7 +61,7 @@ async function optionalUserId(c: Context<{ Bindings: Env }>): Promise<number | n
 
 // 点赞/取消点赞（注册用户或配置了归属用户的管理员）
 likes.post('/toggle', likerAuth, async (c) => {
-  const me = c.get('liker') as { id: number };
+  const me = c.get('liker') as { id: number; username: string };
   const body = await c.req.json<{ target_type?: string; target_id?: number }>().catch(() => ({}));
   const target = parseTarget(body.target_type, body.target_id);
   if (!target) return c.json({ detail: '非法点赞目标' }, 400);
@@ -76,12 +78,13 @@ likes.post('/toggle', likerAuth, async (c) => {
       .bind(me.id, target.type, target.id).run();
     liked = true;
   }
+  await logAudit(db, liked ? 'like' : 'unlike', me.username, `${liked ? '点赞' : '取消点赞'} ${target.type}#${target.id}`);
   return c.json({ liked, count: await countOf(db, target.type, target.id) });
 });
 
 // 连赞：同一用户可累加多个赞（注册用户或配置了归属用户的管理员），单用户单目标上限 50
 likes.post('/burst', likerAuth, async (c) => {
-  const me = c.get('liker') as { id: number };
+  const me = c.get('liker') as { id: number; username: string };
   const body = await c.req.json<{ target_type?: string; target_id?: number; delta?: number }>().catch(() => ({}));
   const target = parseTarget(body.target_type, body.target_id);
   if (!target) return c.json({ detail: '非法点赞目标' }, 400);
@@ -94,6 +97,7 @@ likes.post('/burst', likerAuth, async (c) => {
     `INSERT INTO likes (user_id, target_type, target_id, count) VALUES (?, ?, ?, MIN(?, ?))
      ON CONFLICT(user_id, target_type, target_id) DO UPDATE SET count = MIN(count + ?, ?)`
   ).bind(me.id, target.type, target.id, delta, MAX_PER_USER, delta, MAX_PER_USER).run();
+  await logAudit(db, 'like_burst', me.username, `连赞 +${delta} ${target.type}#${target.id}`);
   return c.json({ liked: true, count: await countOf(db, target.type, target.id) });
 });
 

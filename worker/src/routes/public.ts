@@ -5,6 +5,7 @@ import { signJwt } from '../auth';
 import { rateLimit, clientIp } from '../security';
 import { contentGuard, getSetting } from '../guard';
 import { sendEmail } from '../smtp';
+import { logAudit } from '../audit';
 
 const pub = new Hono<{ Bindings: Env }>();
 
@@ -103,9 +104,9 @@ content.get('/albums', async (c) => {
               COALESCE(NULLIF(a.title_en,''), a.title) AS title,
               COALESCE(NULLIF(a.description_en,''), a.description) AS description,
               p.filename AS cover_filename
-       FROM albums a LEFT JOIN photos p ON p.id = a.cover_photo_id
+       FROM albums a LEFT JOIN photos p ON p.id = a.cover_photo_id AND p.hidden = 0
        ORDER BY a.sort_order, a.id`
-    : 'SELECT a.*, p.filename AS cover_filename FROM albums a LEFT JOIN photos p ON p.id = a.cover_photo_id ORDER BY a.sort_order, a.id';
+    : 'SELECT a.*, p.filename AS cover_filename FROM albums a LEFT JOIN photos p ON p.id = a.cover_photo_id AND p.hidden = 0 ORDER BY a.sort_order, a.id';
   const { results } = await c.env.DB.prepare(sql).all();
   return c.json(results);
 });
@@ -117,13 +118,14 @@ content.get('/albums/:id', async (c) => {
               COALESCE(NULLIF(a.title_en,''), a.title) AS title,
               COALESCE(NULLIF(a.description_en,''), a.description) AS description,
               p.filename AS cover_filename
-       FROM albums a LEFT JOIN photos p ON p.id = a.cover_photo_id WHERE a.id = ?`
-    : 'SELECT a.*, p.filename AS cover_filename FROM albums a LEFT JOIN photos p ON p.id = a.cover_photo_id WHERE a.id = ?';
+       FROM albums a LEFT JOIN photos p ON p.id = a.cover_photo_id AND p.hidden = 0 WHERE a.id = ?`
+    : 'SELECT a.*, p.filename AS cover_filename FROM albums a LEFT JOIN photos p ON p.id = a.cover_photo_id AND p.hidden = 0 WHERE a.id = ?';
   const album = await c.env.DB.prepare(albumSql).bind(c.req.param('id')).first();
   if (!album) return c.json({ detail: '相册不存在' }, 404);
+  // 隐藏的照片前台不展示（R2 文件保留，后台可恢复）
   const photosSql = isEn
-    ? 'SELECT id, filename, taken_at, sort_order, COALESCE(NULLIF(caption_en,\'\'), caption) AS caption FROM photos WHERE album_id = ? ORDER BY sort_order, id'
-    : 'SELECT id, filename, caption, taken_at, sort_order FROM photos WHERE album_id = ? ORDER BY sort_order, id';
+    ? 'SELECT id, filename, taken_at, sort_order, COALESCE(NULLIF(caption_en,\'\'), caption) AS caption FROM photos WHERE album_id = ? AND hidden = 0 ORDER BY sort_order, id'
+    : 'SELECT id, filename, caption, taken_at, sort_order FROM photos WHERE album_id = ? AND hidden = 0 ORDER BY sort_order, id';
   const { results: photos } = await c.env.DB.prepare(photosSql).bind(c.req.param('id')).all();
   return c.json({ ...album, photos });
 });
@@ -255,6 +257,8 @@ content.post('/messages', async (c) => {
   const approved = target_type === 'diary' ? 1 : 0;
   await c.env.DB.prepare('INSERT INTO messages (nickname, content, target_type, target_id, quote_text, parent_id, is_approved) VALUES (?, ?, ?, ?, ?, ?, ?)')
     .bind(nickname.trim(), text.trim(), target_type, target_id, quote, parentId, approved).run();
+  const targetLabel = target_id ? `${target_type}#${target_id}` : target_type;
+  await logAudit(c.env.DB, 'message_post', nickname.trim(), `在 ${targetLabel} 留言：${text.trim().slice(0, 30)}`);
   return approved
     ? c.json({ detail: '评论已发布' }, 201)
     : c.json({ detail: '留言已提交，待审核' }, 202);
@@ -291,11 +295,14 @@ content.get('/leaderboard', async (c) => {
             COALESCE(l.likes, 0) * 5 + COALESCE(v.views, 0) AS score
      FROM albums t ${LEADERBOARD_STATS} ${LEADERBOARD_TAIL}`
   ).bind('album', 'album').all();
+  // 照片榜排除已隐藏的
   const { results: photos } = await db.prepare(
     `SELECT t.id, t.album_id, t.filename, t.caption, t.caption_en,
             COALESCE(v.views, 0) AS views, COALESCE(l.likes, 0) AS likes,
             COALESCE(l.likes, 0) * 5 + COALESCE(v.views, 0) AS score
-     FROM photos t ${LEADERBOARD_STATS} ${LEADERBOARD_TAIL}`
+     FROM photos t ${LEADERBOARD_STATS}
+     WHERE t.hidden = 0 AND COALESCE(v.views, 0) + COALESCE(l.likes, 0) > 0
+     ORDER BY score DESC, t.id ASC LIMIT 10`
   ).bind('photo', 'photo').all();
   // 日记榜只算已发布的；带 slug 供前端跳转
   const { results: diaries } = await db.prepare(

@@ -19,13 +19,45 @@ const formContent = ref('');
 
 // ---- 数据变动 ----
 const auditLogs = ref([]);
+const auditType = ref('');      // 类型筛选，空 = 全部
+const auditHasMore = ref(false);
+const AUDIT_PAGE = 50;
 
 const TYPE_KEYS = {
   user_register: 'typeUserRegister',
+  user_login: 'typeUserLogin',
   avatar_update: 'typeAvatarUpdate',
   password_reset: 'typePasswordReset',
   user_create: 'typeUserCreate',
   user_delete: 'typeUserDelete',
+  admin_login: 'typeAdminLogin',
+  like: 'typeLike',
+  unlike: 'typeUnlike',
+  like_burst: 'typeLikeBurst',
+  message_post: 'typeMessagePost',
+  message_review: 'typeMessageReview',
+  checkin: 'typeCheckin',
+  box_draw: 'typeBoxDraw',
+  redeem: 'typeRedeem',
+  prize_use: 'typePrizeUse',
+  photo_upload: 'typePhotoUpload',
+  photo_delete: 'typePhotoDelete',
+  photo_hide: 'typePhotoHide',
+  photo_unhide: 'typePhotoUnhide',
+  album_create: 'typeAlbumCreate',
+  album_update: 'typeAlbumUpdate',
+  album_delete: 'typeAlbumDelete',
+  diary_create: 'typeDiaryCreate',
+  diary_update: 'typeDiaryUpdate',
+  diary_delete: 'typeDiaryDelete',
+  music_create: 'typeMusicCreate',
+  music_delete: 'typeMusicDelete',
+  settings_update: 'typeSettingsUpdate',
+  prize_create: 'typePrizeCreate',
+  prize_update: 'typePrizeUpdate',
+  prize_delete: 'typePrizeDelete',
+  prize_record_use: 'typePrizeRecordUse',
+  prize_record_cancel: 'typePrizeRecordCancel',
 };
 
 function typeLabel(type) {
@@ -38,6 +70,17 @@ function fmtTime(s) {
   return String(s).slice(0, 16);
 }
 
+// 数据变动：类型筛选 + offset 分页（「加载更多」追加）
+async function loadAudit(append = false) {
+  const params = new URLSearchParams();
+  if (auditType.value) params.set('type', auditType.value);
+  params.set('offset', String(append ? auditLogs.value.length : 0));
+  params.set('limit', String(AUDIT_PAGE));
+  const items = await api(`/admin/audit-logs?${params}`, { admin: true });
+  auditLogs.value = append ? [...auditLogs.value, ...items] : items;
+  auditHasMore.value = items.length === AUDIT_PAGE;
+}
+
 async function load() {
   loading.value = true;
   error.value = '';
@@ -45,12 +88,21 @@ async function load() {
     if (tab.value === 'versions') {
       changelogs.value = await api('/admin/changelogs', { admin: true });
     } else {
-      auditLogs.value = await api('/admin/audit-logs', { admin: true });
+      await loadAudit(false);
     }
   } catch (e) {
     error.value = e.message;
   } finally {
     loading.value = false;
+  }
+}
+
+async function loadMoreAudit() {
+  error.value = '';
+  try {
+    await loadAudit(true);
+  } catch (e) {
+    error.value = e.message;
   }
 }
 
@@ -145,6 +197,14 @@ onMounted(load);
     </section>
 
     <section v-else class="card">
+      <div class="audit-toolbar">
+        <select v-model="auditType" @change="load">
+          <option value="">{{ t('adminChangelog.filterAll') }}</option>
+          <option v-for="(key, type) in TYPE_KEYS" :key="type" :value="type">
+            {{ t(`adminChangelog.${key}`) }}
+          </option>
+        </select>
+      </div>
       <p v-if="!loading && !auditLogs.length" class="hint">{{ t('adminChangelog.emptyAudit') }}</p>
       <ul v-else class="list">
         <li v-for="r in auditLogs" :key="r.id" class="item">
@@ -156,6 +216,9 @@ onMounted(load);
           <p v-if="r.detail" class="content">{{ r.detail }}</p>
         </li>
       </ul>
+      <button v-if="auditHasMore" class="btn load-more" :disabled="loading" @click="loadMoreAudit">
+        {{ t('adminChangelog.loadMore') }}
+      </button>
     </section>
 
     <div v-if="formOpen" class="modal">
@@ -221,6 +284,24 @@ onMounted(load);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
   padding: 20px 24px;
+}
+.audit-toolbar {
+  margin-bottom: 12px;
+}
+.audit-toolbar select {
+  padding: 6px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  font-size: 14px;
+  background: #fff;
+  outline: none;
+}
+.audit-toolbar select:focus {
+  border-color: var(--color-primary);
+}
+.load-more {
+  display: block;
+  margin: 12px auto 0;
 }
 .list {
   list-style: none;

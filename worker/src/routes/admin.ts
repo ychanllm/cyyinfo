@@ -41,6 +41,7 @@ admin.post('/login', async (c) => {
     return c.json({ detail: '账号或密码错误' }, 401);
   }
   const token = await signJwt(c.env, { sub: user.id, username: user.username, role: 'admin' });
+  await logAudit(c.env.DB, 'admin_login', user.username, `管理员 ${user.username} 登录后台`);
   return c.json({ token, display_name: user.display_name });
 });
 
@@ -179,12 +180,13 @@ admin.get('/settings', async (c) => {
 });
 
 admin.put('/settings', async (c) => {
+  const body = await c.req.json<Record<string, unknown>>();
   const {
     site_name, site_name_en, anniversary_date, passcode, background_color, hero_label, hero_label_en,
     hero_title, hero_title_en,
     smtp_host, smtp_port, smtp_user, smtp_pass, default_recipient,
     admin_like_user_id,
-  } = await c.req.json();
+  } = body;
   if (site_name !== undefined) await setSetting(c.env.DB, 'site_name', String(site_name));
   if (site_name_en !== undefined) await setSetting(c.env.DB, 'site_name_en', String(site_name_en));
   if (anniversary_date !== undefined) await setSetting(c.env.DB, 'anniversary_date', String(anniversary_date));
@@ -216,6 +218,8 @@ admin.put('/settings', async (c) => {
     await setSetting(c.env.DB, 'site_passcode_hash',
       passcode === '' ? '' : bcrypt.hashSync(String(passcode), 10));
   }
+  await logAudit(c.env.DB, 'settings_update', (c.get('admin') as { username: string }).username,
+    `更新站点设置：${Object.keys(body).join(', ')}`);
   return c.json({ ok: true });
 });
 
@@ -230,6 +234,7 @@ admin.post('/albums', async (c) => {
   if (!title) return c.json({ detail: '标题必填' }, 400);
   const r = await c.env.DB.prepare('INSERT INTO albums (title, title_en, description, description_en, sort_order) VALUES (?, ?, ?, ?, ?)')
     .bind(title, title_en || null, description, description_en || null, sort_order).run();
+  await logAudit(c.env.DB, 'album_create', (c.get('admin') as { username: string }).username, `创建相册「${title}」`);
   return c.json({ id: r.meta.last_row_id, title, description, sort_order });
 });
 
@@ -245,6 +250,7 @@ admin.put('/albums/:id', async (c) => {
   if (!setParts.length) return c.json({ ok: true });
   params.push(Number(c.req.param('id')));
   await c.env.DB.prepare(`UPDATE albums SET ${setParts.join(', ')} WHERE id = ?`).bind(...params).run();
+  await logAudit(c.env.DB, 'album_update', (c.get('admin') as { username: string }).username, `更新相册#${c.req.param('id')}`);
   return c.json({ ok: true });
 });
 
@@ -254,6 +260,7 @@ admin.delete('/albums/:id', async (c) => {
     .bind(c.req.param('id')).all<{ filename: string }>();
   for (const p of results) await c.env.UPLOADS.delete(p.filename);
   await c.env.DB.prepare('DELETE FROM albums WHERE id = ?').bind(c.req.param('id')).run();
+  await logAudit(c.env.DB, 'album_delete', (c.get('admin') as { username: string }).username, `删除相册#${c.req.param('id')}`);
   return c.json({ ok: true });
 });
 
@@ -270,7 +277,7 @@ admin.get('/albums/:id', async (c) => {
     .bind(c.req.param('id')).first();
   if (!album) return c.json({ detail: '相册不存在' }, 404);
   const { results: photos } = await c.env.DB.prepare(
-    'SELECT id, filename, caption, caption_en, taken_at, sort_order FROM photos WHERE album_id = ? ORDER BY sort_order, id'
+    'SELECT id, filename, caption, caption_en, taken_at, sort_order, hidden FROM photos WHERE album_id = ? ORDER BY sort_order, id'
   ).bind(c.req.param('id')).all();
   return c.json({ ...album, photos });
 });
@@ -287,13 +294,14 @@ admin.post('/photos', async (c) => {
   if (error) return c.json({ detail: error }, 400);
   const r = await c.env.DB.prepare('INSERT INTO photos (album_id, filename, caption, caption_en) VALUES (?, ?, ?, ?)')
     .bind(albumId, key!, caption, captionEn || null).run();
+  await logAudit(c.env.DB, 'photo_upload', (c.get('admin') as { username: string }).username, `上传照片到相册#${albumId}`);
   return c.json({ id: r.meta.last_row_id, filename: key, album_id: albumId, caption });
 });
 
 admin.put('/photos/:id', async (c) => {
-  const { caption, caption_en, sort_order, taken_at, album_id } = await c.req.json();
-  const photo = await c.env.DB.prepare('SELECT album_id FROM photos WHERE id = ?')
-    .bind(c.req.param('id')).first<{ album_id: number }>();
+  const { caption, caption_en, sort_order, taken_at, album_id, hidden } = await c.req.json();
+  const photo = await c.env.DB.prepare('SELECT album_id, hidden FROM photos WHERE id = ?')
+    .bind(c.req.param('id')).first<{ album_id: number; hidden: number }>();
   if (!photo) return c.json({ detail: '照片不存在' }, 404);
   // 移动到其他相册：校验目标存在；若该照片是原相册封面，清空原相册封面
   if (album_id !== undefined && album_id !== null) {
@@ -309,9 +317,15 @@ admin.put('/photos/:id', async (c) => {
   if (sort_order !== undefined) { setParts.push('sort_order = ?'); params.push(sort_order); }
   if (taken_at !== undefined) { setParts.push('taken_at = ?'); params.push(taken_at); }
   if (album_id !== undefined && album_id !== null) { setParts.push('album_id = ?'); params.push(album_id); }
+  // 隐藏/恢复：只改 D1 标记，R2 文件保留
+  if (hidden !== undefined) { setParts.push('hidden = ?'); params.push(hidden ? 1 : 0); }
   if (setParts.length) {
     params.push(Number(c.req.param('id')));
     await c.env.DB.prepare(`UPDATE photos SET ${setParts.join(', ')} WHERE id = ?`).bind(...params).run();
+  }
+  if (hidden !== undefined && Boolean(hidden) !== Boolean(photo.hidden)) {
+    await logAudit(c.env.DB, hidden ? 'photo_hide' : 'photo_unhide',
+      (c.get('admin') as { username: string }).username, `${hidden ? '隐藏' : '恢复'}照片#${c.req.param('id')}`);
   }
   return c.json({ ok: true });
 });
@@ -321,6 +335,7 @@ admin.delete('/photos/:id', async (c) => {
     .bind(c.req.param('id')).first<{ filename: string }>();
   if (photo) await c.env.UPLOADS.delete(photo.filename);
   await c.env.DB.prepare('DELETE FROM photos WHERE id = ?').bind(c.req.param('id')).run();
+  await logAudit(c.env.DB, 'photo_delete', (c.get('admin') as { username: string }).username, `删除照片#${c.req.param('id')}`);
   return c.json({ ok: true });
 });
 
@@ -363,6 +378,7 @@ admin.post('/diaries', async (c) => {
   // 创建即第 1 次编辑
   await c.env.DB.prepare('INSERT INTO diary_versions (diary_id, version, title, content_md) VALUES (?, 1, ?, ?)')
     .bind(diaryId, title, content_md).run();
+  await logAudit(c.env.DB, 'diary_create', (c.get('admin') as { username: string }).username, `创建日记「${title}」`);
   return c.json({ id: diaryId });
 });
 
@@ -412,6 +428,8 @@ admin.put('/diaries/:id', async (c) => {
     await c.env.DB.prepare('INSERT INTO diary_versions (diary_id, version, title, content_md) VALUES (?, ?, ?, ?)')
       .bind(diaryId, nextVersion, newTitle, newContent).run();
   }
+  await logAudit(c.env.DB, 'diary_update', (c.get('admin') as { username: string }).username,
+    `更新日记#${diaryId}${status ? `（状态→${status}）` : ''}`);
   return c.json({ ok: true });
 });
 
@@ -420,6 +438,7 @@ admin.delete('/diaries/:id', async (c) => {
     .bind(c.req.param('id')).first<{ cover_filename: string | null }>();
   if (d?.cover_filename) await c.env.UPLOADS.delete(d.cover_filename);
   await c.env.DB.prepare('DELETE FROM diaries WHERE id = ?').bind(c.req.param('id')).run();
+  await logAudit(c.env.DB, 'diary_delete', (c.get('admin') as { username: string }).username, `删除日记#${c.req.param('id')}`);
   return c.json({ ok: true });
 });
 
@@ -549,6 +568,7 @@ admin.post('/music/songs', async (c) => {
   if (error) return c.json({ detail: error }, 400);
   const r = await c.env.DB.prepare('INSERT INTO songs (album_id, title, title_en, track_no, filename) VALUES (?, ?, ?, ?, ?)')
     .bind(albumId, title, titleEn || null, trackNo, key!).run();
+  await logAudit(c.env.DB, 'music_create', (c.get('admin') as { username: string }).username, `上传歌曲「${title}」`);
   return c.json({ id: r.meta.last_row_id, filename: key });
 });
 
@@ -570,6 +590,7 @@ admin.delete('/music/songs/:id', async (c) => {
     .bind(c.req.param('id')).first<{ filename: string }>();
   if (s) await c.env.UPLOADS.delete(s.filename);
   await c.env.DB.prepare('DELETE FROM songs WHERE id = ?').bind(c.req.param('id')).run();
+  await logAudit(c.env.DB, 'music_delete', (c.get('admin') as { username: string }).username, `删除歌曲#${c.req.param('id')}`);
   return c.json({ ok: true });
 });
 
@@ -592,16 +613,19 @@ admin.get('/messages', async (c) => {
 
 admin.post('/messages/:id/approve', async (c) => {
   await c.env.DB.prepare('UPDATE messages SET is_approved = 1 WHERE id = ?').bind(c.req.param('id')).run();
+  await logAudit(c.env.DB, 'message_review', (c.get('admin') as { username: string }).username, `通过留言#${c.req.param('id')}`);
   return c.json({ ok: true });
 });
 
 admin.post('/messages/:id/hide', async (c) => {
   await c.env.DB.prepare('UPDATE messages SET is_approved = 0 WHERE id = ?').bind(c.req.param('id')).run();
+  await logAudit(c.env.DB, 'message_review', (c.get('admin') as { username: string }).username, `隐藏留言#${c.req.param('id')}`);
   return c.json({ ok: true });
 });
 
 admin.delete('/messages/:id', async (c) => {
   await c.env.DB.prepare('DELETE FROM messages WHERE id = ?').bind(c.req.param('id')).run();
+  await logAudit(c.env.DB, 'message_review', (c.get('admin') as { username: string }).username, `删除留言#${c.req.param('id')}`);
   return c.json({ ok: true });
 });
 
@@ -697,11 +721,16 @@ admin.delete('/changelogs/:id', async (c) => {
   return c.json({ ok: true });
 });
 
-// ---- 用户数据变动（自动记录，只读，最新 100 条）----
+// ---- 用户数据变动（自动记录，只读）：支持 type 筛选 + offset 分页 ----
 admin.get('/audit-logs', async (c) => {
+  const type = (c.req.query('type') ?? '').trim();
+  const offset = Math.max(0, Number(c.req.query('offset')) || 0);
+  const limit = Math.min(100, Math.max(1, Number(c.req.query('limit')) || 50));
+  const where = type ? 'WHERE type = ?' : '';
+  const args: unknown[] = type ? [type, limit, offset] : [limit, offset];
   const { results } = await c.env.DB.prepare(
-    'SELECT * FROM audit_logs ORDER BY id DESC LIMIT 100'
-  ).all();
+    `SELECT * FROM audit_logs ${where} ORDER BY id DESC LIMIT ? OFFSET ?`
+  ).bind(...args).all();
   return c.json(results);
 });
 

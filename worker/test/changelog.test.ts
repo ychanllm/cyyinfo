@@ -131,15 +131,65 @@ describe('管理端变更日志', () => {
     expect(logs.find((l) => l.type === 'user_delete' && l.detail?.includes('audit_admin2'))).toBeTruthy();
   });
 
-  it('audit-logs 最多返回 100 条且倒序', async () => {
-    // 直接灌入 110 条，验证 LIMIT 100
+  it('用户登录自动写入 user_login 审计日志', async () => {
+    await registerUser('audit_login_user');
+    const res = await SELF.fetch('http://x/api/auth/login', {
+      method: 'POST', headers: json,
+      body: JSON.stringify({ username: 'audit_login_user', password: 'secret6' }),
+    });
+    expect(res.status).toBe(200);
+    const logs = await SELF.fetch('http://x/api/admin/audit-logs?type=user_login', { headers: await adminH() });
+    const list = (await logs.json()) as any[];
+    expect(list.find((l) => l.actor === 'audit_login_user')).toBeTruthy();
+  });
+
+  it('点赞/连赞自动写入 like / like_burst 审计日志', async () => {
+    const u = await registerUser('audit_like_user');
+    const h = { Authorization: `Bearer ${u.token}`, ...json };
+    const t = await SELF.fetch('http://x/api/likes/toggle', {
+      method: 'POST', headers: h, body: JSON.stringify({ target_type: 'diary', target_id: 9300 }),
+    });
+    expect(t.status).toBe(200);
+    const b = await SELF.fetch('http://x/api/likes/burst', {
+      method: 'POST', headers: h, body: JSON.stringify({ target_type: 'diary', target_id: 9300, delta: 3 }),
+    });
+    expect(b.status).toBe(200);
+
+    const likes = await (await SELF.fetch('http://x/api/admin/audit-logs?type=like', { headers: await adminH() })).json() as any[];
+    expect(likes.find((l) => l.actor === 'audit_like_user' && l.detail?.includes('diary#9300'))).toBeTruthy();
+    const bursts = await (await SELF.fetch('http://x/api/admin/audit-logs?type=like_burst', { headers: await adminH() })).json() as any[];
+    expect(bursts.find((l) => l.actor === 'audit_like_user' && l.detail?.includes('+3'))).toBeTruthy();
+
+    await SELF.fetch('http://x/api/likes/toggle', {
+      method: 'POST', headers: h, body: JSON.stringify({ target_type: 'diary', target_id: 9300 }),
+    });
+    const unlikes = await (await SELF.fetch('http://x/api/admin/audit-logs?type=unlike', { headers: await adminH() })).json() as any[];
+    expect(unlikes.find((l) => l.actor === 'audit_like_user')).toBeTruthy();
+  });
+
+  it('audit-logs 默认 50 条倒序，支持 type 筛选与 offset 分页', async () => {
+    // 直接灌入 110 条，验证默认 LIMIT 50
     const stmts = Array.from({ length: 110 }, (_, i) =>
       env.DB.prepare('INSERT INTO audit_logs (type, actor, detail) VALUES (?, ?, ?)')
         .bind('bulk_test', 'tester', `bulk ${i}`));
     await env.DB.batch(stmts);
     const logs = await auditLogs();
-    expect(logs.length).toBe(100);
+    expect(logs.length).toBe(50);
     for (let i = 1; i < logs.length; i++) expect(logs[i - 1].id).toBeGreaterThan(logs[i].id);
+
+    // type 筛选：只返回指定类型
+    const filtered = await SELF.fetch('http://x/api/admin/audit-logs?type=bulk_test', { headers: await adminH() });
+    const filteredLogs = (await filtered.json()) as any[];
+    expect(filteredLogs.length).toBe(50);
+    expect(filteredLogs.every((l) => l.type === 'bulk_test')).toBe(true);
+
+    // offset 分页：第二页与第一页不重叠，且能翻到尾（110 条 → 第 3 页 10 条）
+    const page2 = await (await SELF.fetch('http://x/api/admin/audit-logs?type=bulk_test&offset=50', { headers: await adminH() })).json() as any[];
+    expect(page2.length).toBe(50);
+    expect(page2[0].id).toBeLessThan(filteredLogs[49].id);
+    const page3 = await (await SELF.fetch('http://x/api/admin/audit-logs?type=bulk_test&offset=100', { headers: await adminH() })).json() as any[];
+    expect(page3.length).toBe(10);
+
     // 清理，避免影响其他用例
     await env.DB.prepare("DELETE FROM audit_logs WHERE type = 'bulk_test'").run();
   });

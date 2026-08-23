@@ -57,6 +57,7 @@ users.post('/auth/login', async (c) => {
     return c.json({ detail: '用户名或密码错误' }, 401);
   }
   const token = await signJwt(c.env, { sub: user.id, username: user.username, role: 'user' }, 24 * 7);
+  await logAudit(c.env.DB, 'user_login', user.username, `用户 ${user.username} 登录`);
   return c.json({ token, username: user.username, points: user.points });
 });
 
