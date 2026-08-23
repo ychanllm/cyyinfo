@@ -482,6 +482,11 @@ export default {
     checkinMax: '每日积分上限',
     boxCost: '盲盒单次价格',
     checkinSaved: '签到设置已保存',
+    like: '点赞设置',
+    likeAttribution: '管理员点赞归属用户',
+    likeAttributionHint: '管理员在前台点赞时，点赞记到该注册用户头上；留空则管理员不能点赞。',
+    likeNone: '（不指定，管理员不能点赞）',
+    likeSaved: '点赞设置已保存',
   },
   adminUsers: {
     title: '账号管理',

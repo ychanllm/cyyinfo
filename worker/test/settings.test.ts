@@ -1,4 +1,4 @@
-import { SELF } from 'cloudflare:test';
+import { SELF, env } from 'cloudflare:test';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { applyMigrations, adminToken } from './helpers';
 
@@ -43,5 +43,29 @@ describe('账号与设置', () => {
     expect(res.status).toBe(200);
     status = await (await SELF.fetch('http://x/api/site/status')).json() as any;
     expect(status.passcode_enabled).toBe(false);
+  });
+
+  it('点赞归属用户：不存在的用户 400，合法用户可设置并读回，可清空', async () => {
+    const r = await env.DB.prepare("INSERT INTO users (username, password_hash) VALUES ('like_attr_user', 'x')").run();
+    const uid = Number(r.meta.last_row_id);
+
+    let res = await SELF.fetch('http://x/api/admin/settings', {
+      method: 'PUT', headers: auth(), body: JSON.stringify({ admin_like_user_id: 999999 }),
+    });
+    expect(res.status).toBe(400);
+
+    res = await SELF.fetch('http://x/api/admin/settings', {
+      method: 'PUT', headers: auth(), body: JSON.stringify({ admin_like_user_id: uid }),
+    });
+    expect(res.status).toBe(200);
+    const s = await (await SELF.fetch('http://x/api/admin/settings', { headers: auth() })).json() as any;
+    expect(s.admin_like_user_id).toBe(String(uid));
+
+    res = await SELF.fetch('http://x/api/admin/settings', {
+      method: 'PUT', headers: auth(), body: JSON.stringify({ admin_like_user_id: '' }),
+    });
+    expect(res.status).toBe(200);
+    const s2 = await (await SELF.fetch('http://x/api/admin/settings', { headers: auth() })).json() as any;
+    expect(s2.admin_like_user_id).toBe('');
   });
 });

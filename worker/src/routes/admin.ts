@@ -174,6 +174,7 @@ admin.get('/settings', async (c) => {
     smtp_user: await getSetting(c.env.DB, 'smtp_user'),
     smtp_pass: await getSetting(c.env.DB, 'smtp_pass'),
     default_recipient: await getSetting(c.env.DB, 'default_recipient'),
+    admin_like_user_id: await getSetting(c.env.DB, 'admin_like_user_id'),
   });
 });
 
@@ -182,6 +183,7 @@ admin.put('/settings', async (c) => {
     site_name, site_name_en, anniversary_date, passcode, background_color, hero_label, hero_label_en,
     hero_title, hero_title_en,
     smtp_host, smtp_port, smtp_user, smtp_pass, default_recipient,
+    admin_like_user_id,
   } = await c.req.json();
   if (site_name !== undefined) await setSetting(c.env.DB, 'site_name', String(site_name));
   if (site_name_en !== undefined) await setSetting(c.env.DB, 'site_name_en', String(site_name_en));
@@ -196,6 +198,20 @@ admin.put('/settings', async (c) => {
   if (smtp_user !== undefined) await setSetting(c.env.DB, 'smtp_user', String(smtp_user));
   if (smtp_pass !== undefined) await setSetting(c.env.DB, 'smtp_pass', String(smtp_pass));
   if (default_recipient !== undefined) await setSetting(c.env.DB, 'default_recipient', String(default_recipient));
+  if (admin_like_user_id !== undefined) {
+    // 点赞归属用户：空串清除；否则必须是已存在的注册用户
+    const v = String(admin_like_user_id).trim();
+    if (v === '') {
+      await setSetting(c.env.DB, 'admin_like_user_id', '');
+    } else {
+      const n = Number(v);
+      const u = Number.isInteger(n) && n > 0
+        ? await c.env.DB.prepare('SELECT id FROM users WHERE id = ?').bind(n).first()
+        : null;
+      if (!u) return c.json({ detail: '归属用户不存在' }, 400);
+      await setSetting(c.env.DB, 'admin_like_user_id', String(n));
+    }
+  }
   if (passcode !== undefined) {
     await setSetting(c.env.DB, 'site_passcode_hash',
       passcode === '' ? '' : bcrypt.hashSync(String(passcode), 10));

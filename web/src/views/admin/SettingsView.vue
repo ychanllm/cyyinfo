@@ -23,6 +23,9 @@ const checkinBase = ref('10');
 const checkinBonus = ref('5');
 const checkinMax = ref('40');
 const boxCost = ref('100');
+// 点赞归属用户：管理员在前台点赞时记到该注册用户头上
+const siteUsers = ref([]);
+const adminLikeUserId = ref('');
 
 const loading = ref(true);
 const saving = ref(false);
@@ -48,6 +51,8 @@ async function loadSettings() {
     smtpUser.value = data.smtp_user || '';
     smtpPass.value = data.smtp_pass || '';
     defaultRecipient.value = data.default_recipient || '';
+    adminLikeUserId.value = data.admin_like_user_id || '';
+    siteUsers.value = await api('/admin/site-users', { admin: true });
     const ck = await api('/admin/checkin-settings', { admin: true });
     checkinBase.value = ck.checkin_base_points;
     checkinBonus.value = ck.checkin_streak_bonus;
@@ -128,6 +133,24 @@ async function savePasscode() {
     newPasscode.value = '';
     success.value = t('adminSettings.passcodeUpdated');
     await loadSettings();
+  } catch (e) {
+    error.value = e.message;
+  } finally {
+    saving.value = false;
+  }
+}
+
+async function saveLike() {
+  saving.value = true;
+  error.value = '';
+  success.value = '';
+  try {
+    await api('/admin/settings', {
+      method: 'PUT',
+      admin: true,
+      body: { admin_like_user_id: adminLikeUserId.value },
+    });
+    success.value = t('adminSettings.likeSaved');
   } catch (e) {
     error.value = e.message;
   } finally {
@@ -289,6 +312,23 @@ onMounted(loadSettings);
             <input v-model="defaultRecipient" type="email" placeholder="xxx@qq.com" />
           </label>
           <button type="submit" class="submit-btn" :disabled="saving">{{ saving ? t('adminSettings.saving') : t('adminSettings.save') }}</button>
+        </form>
+      </section>
+
+      <section class="card">
+        <h3>{{ t('adminSettings.like') }}</h3>
+        <p class="status">{{ t('adminSettings.likeAttributionHint') }}</p>
+        <form class="form" @submit.prevent="saveLike">
+          <label class="field">
+            {{ t('adminSettings.likeAttribution') }}
+            <select v-model="adminLikeUserId">
+              <option value="">{{ t('adminSettings.likeNone') }}</option>
+              <option v-for="u in siteUsers" :key="u.id" :value="String(u.id)">{{ u.username }}</option>
+            </select>
+          </label>
+          <button type="submit" class="submit-btn" :disabled="saving">
+            {{ saving ? t('adminSettings.saving') : t('adminSettings.save') }}
+          </button>
         </form>
       </section>
 

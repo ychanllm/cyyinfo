@@ -16,8 +16,11 @@ export const clearUserToken = () => localStorage.removeItem(USER_KEY);
 
 async function request(path, { method = 'GET', body, admin = false, form = null } = {}) {
   const headers = {};
-  // 优先用管理员 token（管理员可免口令浏览公开页）；其次登录用户；最后访客口令 token
-  const token = admin ? getAdminToken() : (getAdminToken() || getUserToken() || getGuestToken());
+  // 用户接口优先发用户 token：浏览器同时存有管理员 token 时，避免用户请求被当成管理员（401 错跳管理员登录）；
+  // 管理员无用户 token 时回退管理员 token（可免口令浏览公开页、点赞记到归属用户）；最后访客口令 token
+  const userToken = getUserToken();
+  const adminToken = getAdminToken();
+  const token = admin ? adminToken : (userToken || adminToken || getGuestToken());
   if (token) headers.Authorization = `Bearer ${token}`;
   let payload;
   if (form) {
@@ -39,7 +42,9 @@ async function request(path, { method = 'GET', body, admin = false, form = null 
       throw new Error(data.detail || i18n.global.t('api.badCredentials'));
     }
     const loc = i18n.global.locale.value;
-    if (admin || getAdminToken()) {
+    // 按本次请求实际发送的 token 分流：发了管理员 token 才按管理员会话失效处理，
+    // 否则按用户/访客处理（浏览器里有管理员 token 不代表这次请求用的是它）
+    if (admin || (!userToken && adminToken)) {
       // 管理员会话失效：清管理员 token，回管理员登录页（已登录管理员不应被抛到访客门禁页）
       clearAdminToken();
       if (!location.pathname.startsWith(`/${loc}/admin/login`)) location.href = `/${loc}/admin/login`;

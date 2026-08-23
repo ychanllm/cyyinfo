@@ -482,6 +482,11 @@ export default {
     checkinMax: 'Daily points cap',
     boxCost: 'Mystery box price',
     checkinSaved: 'Check-in settings saved',
+    like: 'Likes',
+    likeAttribution: 'Attribution user for admin likes',
+    likeAttributionHint: 'When an admin likes content on the site, the like is recorded under this registered user. Leave empty to disable admin likes.',
+    likeNone: '(Not set — admins cannot like)',
+    likeSaved: 'Like settings saved',
   },
   adminUsers: {
     title: 'Account Management',

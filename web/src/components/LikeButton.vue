@@ -2,7 +2,7 @@
 import { ref, onUnmounted } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { useI18n } from 'vue-i18n';
-import { api, getUserToken } from '../api';
+import { api, getUserToken, getAdminToken } from '../api';
 import { localize } from '../i18n';
 
 const { t } = useI18n();
@@ -77,9 +77,12 @@ async function flush() {
   }
 }
 
+// 注册用户或管理员均可点赞（管理员点赞记到后台设置的归属用户）
+const canLike = () => Boolean(getUserToken() || getAdminToken());
+
 function tap(x) {
   // 未登录：去登录页，登录后回跳当前页（沿用项目 redirect 惯例）
-  if (!getUserToken()) {
+  if (!canLike()) {
     router.push({ path: localize('/login'), query: { redirect: route.fullPath } });
     return;
   }
@@ -119,7 +122,7 @@ function onPointerCancel() {
 }
 
 async function cancelAll() {
-  if (busy.value || !getUserToken() || !props.liked) return;
+  if (busy.value || !canLike() || !props.liked) return;
   busy.value = true;
   pendingDelta.value = 0; // 丢弃未发送的连点
   try {
@@ -146,7 +149,7 @@ onUnmounted(() => {
     class="like-btn"
     :class="{ liked, pop }"
     :disabled="busy"
-    :title="getUserToken() ? (liked ? t('likes.unlikeAll') : t('likes.like')) : t('likes.loginToLike')"
+    :title="canLike() ? (liked ? t('likes.unlikeAll') : t('likes.like')) : t('likes.loginToLike')"
     @pointerdown.stop.prevent="onPointerDown"
     @pointerup.stop.prevent="onPointerUp"
     @pointerleave="onPointerCancel"

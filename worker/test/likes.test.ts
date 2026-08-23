@@ -1,6 +1,6 @@
 import { SELF, env } from 'cloudflare:test';
 import { describe, it, expect, beforeAll } from 'vitest';
-import { applyMigrations, registerUser } from './helpers';
+import { applyMigrations, registerUser, adminToken } from './helpers';
 
 let alice: { id: number; token: string };
 let bob: { id: number; token: string };
@@ -156,5 +156,76 @@ describe('点赞', () => {
     await toggle(alice, 'photo', 9102); // 清理
     const cleaned = await SELF.fetch('http://x/api/likes?target_type=photo&target_id=9102');
     expect((await cleaned.json() as any).count).toBe(0);
+  });
+});
+
+describe('管理员点赞（归属用户）', () => {
+  const adminAuthHeader = async () => ({
+    Authorization: `Bearer ${await adminToken()}`,
+    'Content-Type': 'application/json',
+  });
+  const setAttribution = (v: string | null) =>
+    v === null
+      ? env.DB.prepare("DELETE FROM settings WHERE key = 'admin_like_user_id'").run()
+      : env.DB.prepare("INSERT INTO settings (key, value) VALUES ('admin_like_user_id', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").bind(v).run();
+  const adminBurst = (target_type: string, target_id: number, delta: number) =>
+    adminAuthHeader().then((headers) => SELF.fetch('http://x/api/likes/burst', {
+      method: 'POST', headers, body: JSON.stringify({ target_type, target_id, delta }),
+    }));
+
+  it('未配置归属用户时管理员点赞返回 400', async () => {
+    await setAttribution(null);
+    const res = await adminBurst('diary', 9200, 1);
+    expect(res.status).toBe(400);
+  });
+
+  it('归属用户不存在时管理员点赞返回 400', async () => {
+    await setAttribution('999999');
+    const res = await adminBurst('diary', 9200, 1);
+    expect(res.status).toBe(400);
+    await setAttribution(null);
+  });
+
+  it('配置归属用户后：管理员点赞记到该用户，liked 状态对管理员可见，toggle 可取消', async () => {
+    const token = await adminToken();
+    await setAttribution(String(alice.id));
+
+    const res = await adminBurst('diary', 9201, 2);
+    expect(res.status).toBe(200);
+    expect(await res.json() as any).toEqual({ liked: true, count: 2 });
+
+    // 点赞记到归属用户头上
+    const row = await env.DB.prepare('SELECT user_id, count FROM likes WHERE target_type = ? AND target_id = ?')
+      .bind('diary', 9201).first<{ user_id: number; count: number }>();
+    expect(row).toMatchObject({ user_id: alice.id, count: 2 });
+
+    // 管理员查看 liked 状态可见（含 batch）
+    const get = await SELF.fetch('http://x/api/likes?target_type=diary&target_id=9201', {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(await get.json() as any).toEqual({ count: 2, liked: true });
+    const batch = await SELF.fetch('http://x/api/likes/batch?target_type=diary&ids=9201', {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(await batch.json() as any).toEqual({ '9201': { count: 2, liked: true } });
+
+    // toggle 取消
+    const un = await SELF.fetch('http://x/api/likes/toggle', {
+      method: 'POST',
+      headers: await adminAuthHeader(),
+      body: JSON.stringify({ target_type: 'diary', target_id: 9201 }),
+    });
+    expect(await un.json() as any).toEqual({ liked: false, count: 0 });
+
+    await setAttribution(null);
+  });
+
+  it('访客 token 仍然 401', async () => {
+    const res = await SELF.fetch('http://x/api/likes/toggle', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer invalid-token' },
+      body: JSON.stringify({ target_type: 'diary', target_id: 9202 }),
+    });
+    expect(res.status).toBe(401);
   });
 });
