@@ -1,7 +1,8 @@
 <script setup>
 import { computed, onMounted } from 'vue';
 import { useRoute } from 'vue-router';
-import { api, getGuestToken, getAdminToken } from './api';
+import { getGuestToken, getAdminToken } from './api';
+import { loadSiteStatus } from './site-status';
 import { autoPlayMusic } from './player';
 import NavBar from './components/NavBar.vue';
 import DesktopPet from './components/DesktopPet.vue';
@@ -13,7 +14,7 @@ const isAdmin = computed(() => route.meta.admin);
 // 应用后台「设置 → 背景颜色」（覆盖 CSS 默认）
 onMounted(async () => {
   try {
-    const s = await api('/site/status');
+    const s = await loadSiteStatus();
     if (s.background_color) {
       document.documentElement.style.setProperty('--bg', s.background_color);
     }

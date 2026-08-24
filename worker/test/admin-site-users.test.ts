@@ -59,6 +59,12 @@ describe('管理端注册用户管理', () => {
       body: JSON.stringify({ username: 'site_admin_view_user', password: 'newpass6' }),
     });
     expect(goodLogin.status).toBe(200);
+    // Password reset increments auth_version: the pre-reset session must no longer work.
+    const stale = await SELF.fetch('http://x/api/auth/me', {
+      headers: { Authorization: `Bearer ${user.token}` },
+    });
+    expect(stale.status).toBe(401);
+    user.token = ((await goodLogin.json()) as any).token;
   });
 
   it('签到记录与积分明细', async () => {

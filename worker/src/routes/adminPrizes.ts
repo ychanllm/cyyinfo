@@ -1,11 +1,11 @@
 import { Hono } from 'hono';
-import type { Env } from '../types';
+import type { AppEnv, Env } from '../types';
 import { adminAuth } from '../auth';
 import { getSetting, setSetting } from '../guard';
 import { saveUpload } from '../upload';
 import { logAudit } from '../audit';
 
-const ap = new Hono<{ Bindings: Env }>();
+const ap = new Hono<AppEnv>();
 
 ap.use('/prizes', adminAuth);
 ap.use('/prizes/*', adminAuth);

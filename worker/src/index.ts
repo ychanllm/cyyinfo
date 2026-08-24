@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import type { Env } from './types';
+import type { AppEnv } from './types';
 import adminRoutes from './routes/admin';
 import publicRoutes from './routes/public';
 import usersRoutes from './routes/users';
@@ -9,10 +9,11 @@ import likesRoutes from './routes/likes';
 import adminPrizesRoutes from './routes/adminPrizes';
 import storageRoutes from './routes/storage';
 import dishesRoutes, { adminDishes } from './routes/dishes';
+import storesRoutes, { adminStores } from './routes/stores';
 
 // Hono 实例自带 fetch 方法：Worker（wrangler deploy / miniflare 测试）用 export default，
 // Pages Functions 用 hono/cloudflare-pages 的 handle(app)，两种部署形态共用同一份代码
-export const app = new Hono<{ Bindings: Env }>();
+export const app = new Hono<AppEnv>();
 
 const ALLOWED_ORIGINS = [
   'http://localhost:5173',
@@ -44,6 +45,8 @@ app.route('/api', pointsRoutes);
 app.route('/api/likes', likesRoutes);
 app.route('/api/dishes', dishesRoutes);
 app.route('/api/admin/dishes', adminDishes);
+app.route('/api/stores', storesRoutes);
+app.route('/api/admin/stores', adminStores);
 app.route('/uploads', storageRoutes);
 
 export default app;

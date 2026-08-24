@@ -7,7 +7,8 @@
     "migrate:create": "wrangler d1 migrations create cyyinfo-db",
     "migrate:apply": "wrangler d1 migrations apply cyyinfo-db --remote",
     "migrate:local": "wrangler d1 migrations apply cyyinfo-db --local",
-    "test": "vitest run"
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.typecheck.json --noEmit"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
@@ -17,6 +18,7 @@
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.5.0",
     "@cloudflare/workers-types": "^5.20260821.1",
+    "typescript": "^7.0.2",
     "vitest": "^2.1.0",
     "wrangler": "^4.125.0"
   }

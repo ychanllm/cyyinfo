@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 
 defineOptions({ name: 'AlbumsView' });
 import { useI18n } from 'vue-i18n';
@@ -12,10 +12,19 @@ const albums = ref([]);
 const loading = ref(true);
 const error = ref('');
 const likes = ref({}); // album.id -> { count, liked }
+const PAGE_SIZE = 12;
+const page = ref(1);
+const total = ref(0);
+const totalPages = computed(() => Math.max(1, Math.ceil(total.value / PAGE_SIZE)));
 
-onMounted(async () => {
+async function load(p = 1) {
+  loading.value = true;
+  error.value = '';
   try {
-    albums.value = await api('/albums');
+    const data = await api(`/albums?page=${p}&size=${PAGE_SIZE}`);
+    albums.value = data.items || data;
+    total.value = data.total ?? albums.value.length;
+    page.value = p;
     if (albums.value.length) {
       try {
         likes.value = await api(`/likes/batch?target_type=album&ids=${albums.value.map((a) => a.id).join(',')}`);
@@ -26,7 +35,9 @@ onMounted(async () => {
   } finally {
     loading.value = false;
   }
-});
+}
+
+onMounted(() => load());
 </script>
 
 <template>
@@ -70,6 +81,12 @@ onMounted(async () => {
           />
         </div>
       </router-link>
+    </div>
+
+    <div v-if="totalPages > 1" class="pager">
+      <button :disabled="page <= 1" @click="load(page - 1)">{{ t('diaries.prev') }}</button>
+      <span>{{ t('diaries.pageNo', { page, total: totalPages }) }}</span>
+      <button :disabled="page >= totalPages" @click="load(page + 1)">{{ t('diaries.next') }}</button>
     </div>
   </div>
 </template>

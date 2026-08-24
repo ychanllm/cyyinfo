@@ -2,11 +2,11 @@
 import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue';
 import { useRoute } from 'vue-router';
 import { useI18n } from 'vue-i18n';
-import { marked } from 'marked';
 import { api } from '../api';
 import { localize } from '../i18n';
 import { fmtDateFull } from '../utils/date';
 import { reportView } from '../utils/views';
+import { renderMarkdown } from '../utils/markdown';
 import MessageBoard from '../components/MessageBoard.vue';
 import LikeButton from '../components/LikeButton.vue';
 
@@ -18,8 +18,8 @@ const loading = ref(true);
 const error = ref('');
 const likeState = ref({ count: 0, liked: false });
 
-// v-html 安全前提：content_md 为管理员自写的可信内容，首版不做消毒（spec 决策）。
-const html = computed(() => (diary.value ? marked.parse(diary.value.content_md || '') : ''));
+// Markdown is sanitized before it reaches v-html.
+const html = computed(() => (diary.value ? renderMarkdown(diary.value.content_md || '') : ''));
 
 // ---- 划线评论 ----
 const bodyEl = ref(null);

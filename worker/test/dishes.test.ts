@@ -78,7 +78,9 @@ describe('菜品投稿', () => {
     const list = await SELF.fetch('http://x/api/dishes');
     const items = (await list.json()) as any[];
     const dish = items.find((d) => d.id === id);
-    expect(dish).toMatchObject({ name: '红烧肉', description: '肥而不腻', want_count: 0, wanted_by_me: false });
+    expect(dish).toMatchObject({
+      name: '红烧肉', description: '肥而不腻', want_count: 0, wanted_by_me: false, chef_pick: false,
+    });
   });
 
   it('multipart 投稿（带图片）成功', async () => {
@@ -162,6 +164,10 @@ describe('管理端菜品管理', () => {
     expect(create.status).toBe(200);
     const { id } = (await create.json()) as any;
     await want(alice, id);
+
+    const publicList = await SELF.fetch('http://x/api/dishes');
+    const publicDish = ((await publicList.json()) as any[]).find((d) => d.id === id);
+    expect(publicDish).toMatchObject({ chef_pick: true });
 
     const list = await SELF.fetch('http://x/api/admin/dishes', { headers: await adminAuth() });
     const dish = ((await list.json()) as any[]).find((d) => d.id === id);

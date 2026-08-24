@@ -133,6 +133,7 @@ async function remove(d) {
           <div class="info">
             <div class="line">
               <span class="name">{{ d.name }}</span>
+              <span v-if="d.created_by_user_id === null" class="badge chef">{{ t('adminDishes.chefPick') }}</span>
               <span v-if="!d.is_active" class="badge off">{{ t('adminDishes.inactive') }}</span>
             </div>
             <p v-if="d.description" class="desc">{{ d.description }}</p>
@@ -262,6 +263,14 @@ async function remove(d) {
   font-size: 12px;
   background: var(--bg-deep);
   color: var(--color-text-light);
+}
+.badge.chef {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  background: #f8e6b8;
+  color: #7a5a18;
 }
 .desc {
   font-size: 13px;

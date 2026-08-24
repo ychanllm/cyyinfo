@@ -18,6 +18,7 @@ const smtpHost = ref('smtp.qq.com');
 const smtpPort = ref('465');
 const smtpUser = ref('');
 const smtpPass = ref('');
+const smtpConfigured = ref(false);
 const defaultRecipient = ref('');
 const checkinBase = ref('10');
 const checkinBonus = ref('5');
@@ -49,7 +50,8 @@ async function loadSettings() {
     smtpHost.value = data.smtp_host || 'smtp.qq.com';
     smtpPort.value = data.smtp_port || '465';
     smtpUser.value = data.smtp_user || '';
-    smtpPass.value = data.smtp_pass || '';
+    smtpPass.value = '';
+    smtpConfigured.value = Boolean(data.smtp_configured);
     defaultRecipient.value = data.default_recipient || '';
     adminLikeUserId.value = data.admin_like_user_id || '';
     siteUsers.value = await api('/admin/site-users', { admin: true });
@@ -104,8 +106,8 @@ async function saveSmtp() {
         smtp_host: smtpHost.value.trim(),
         smtp_port: smtpPort.value.trim() || '587',
         smtp_user: smtpUser.value.trim(),
-        smtp_pass: smtpPass.value.trim(),
         default_recipient: defaultRecipient.value.trim(),
+        ...(smtpPass.value.trim() ? { smtp_pass: smtpPass.value.trim() } : {}),
       },
     });
     success.value = t('adminSettings.smtpSaved');

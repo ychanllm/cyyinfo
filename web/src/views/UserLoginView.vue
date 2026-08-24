@@ -3,6 +3,7 @@ import { ref, computed, onMounted } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { api, setUserToken, getGuestToken, getAdminToken } from '../api';
+import { loadSiteStatus } from '../site-status';
 import { loadMe } from '../me';
 import { localize } from '../i18n';
 import { autoPlayMusic } from '../player';
@@ -21,7 +22,7 @@ const needPasscode = ref(false);
 
 onMounted(async () => {
   try {
-    const s = await api('/site/status');
+    const s = await loadSiteStatus();
     needPasscode.value = s.passcode_enabled && !getGuestToken() && !getAdminToken();
   } catch { /* 状态拉取失败不阻塞登录 */ }
 });

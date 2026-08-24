@@ -3,6 +3,7 @@ import { ref, computed, watch, onMounted } from 'vue';
 import { useRoute } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { api, getUserToken } from '../api';
+import { loadSiteStatus } from '../site-status';
 import { localize } from '../i18n';
 import { me, loadMe } from '../me';
 
@@ -12,7 +13,7 @@ const siteName = ref('');
 
 async function loadStatus() {
   try {
-    const s = await api('/site/status');
+    const s = await loadSiteStatus();
     siteName.value = s.site_name || t('nav.defaultSiteName');
   } catch {
     siteName.value = t('nav.defaultSiteName');
@@ -39,6 +40,7 @@ const links = computed(() => [
   { to: localize('/music'), label: t('nav.music'), icon: '🎵' },
   { to: localize('/points'), label: t('nav.points'), icon: '📅' },
   { to: localize('/dishes'), label: t('nav.dishes'), icon: '🍲' },
+  { to: localize('/stores'), label: t('nav.stores'), icon: '🧭' },
 ]);
 </script>
 

@@ -2,9 +2,9 @@
 import { ref, computed, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
-import { marked } from 'marked';
 import { api, apiUpload } from '../../api';
 import { localize } from '../../i18n';
+import { renderMarkdown } from '../../utils/markdown';
 
 const { t } = useI18n();
 const route = useRoute();
@@ -50,9 +50,9 @@ function fmtVersionTime(s) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-// v-html 安全前提：content_md 为管理员自写的可信内容，首版不做消毒（spec 决策）。
+// Markdown is sanitized before it reaches v-html.
 const activeContent = computed(() => (contentLang.value === 'en' ? contentEn.value : content.value));
-const html = computed(() => marked.parse(activeContent.value || ''));
+const html = computed(() => renderMarkdown(activeContent.value || ''));
 
 onMounted(async () => {
   // 分类下拉选项（新建与编辑都需要）
@@ -334,7 +334,7 @@ async function uploadInlineImage(event) {
 
       <section class="card preview-pane">
         <span class="label">{{ t('adminDiaryEdit.preview') }}</span>
-        <!-- v-html 安全前提：管理员自写的可信内容，首版不做消毒（spec 决策） -->
+        <!-- Markdown is sanitized before it reaches v-html. -->
         <div class="md-body preview-body" v-html="html"></div>
       </section>
     </div>
@@ -360,7 +360,7 @@ async function uploadInlineImage(event) {
       </ul>
       <div v-if="shownVersion" class="version-preview">
         <h4 class="vp-title">{{ shownVersion.title }}</h4>
-        <div class="md-body" v-html="marked.parse(shownVersion.content_md || '')"></div>
+        <div class="md-body" v-html="renderMarkdown(shownVersion.content_md || '')"></div>
       </div>
     </section>
 

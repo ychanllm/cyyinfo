@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import type { Context } from 'hono';
-import type { Env } from '../types';
+import type { AppEnv, Env } from '../types';
 import { userAuth, adminAuth, verifyJwt } from '../auth';
 import { contentGuard } from '../guard';
 import { saveUpload } from '../upload';
@@ -20,7 +20,7 @@ interface DishRow {
 }
 
 // 投稿/新建共用：解析 JSON 或 multipart（可带 image 文件），返回校验后的字段
-async function parseDishPayload(c: Context<{ Bindings: Env }>) {
+async function parseDishPayload(c: Context<AppEnv>) {
   const isMultipart = (c.req.header('Content-Type') ?? '').startsWith('multipart/form-data');
   let name = '';
   let description = '';
@@ -31,7 +31,8 @@ async function parseDishPayload(c: Context<{ Bindings: Env }>) {
     description = String(body.description ?? '').trim();
     if (body.image instanceof File && body.image.size > 0) file = body.image;
   } else {
-    const body = await c.req.json<{ name?: string; description?: string }>().catch(() => ({}));
+    const body = await c.req.json<{ name?: string; description?: string }>()
+      .catch((): { name?: string; description?: string } => ({}));
     name = String(body.name ?? '').trim();
     description = String(body.description ?? '').trim();
   }
@@ -52,17 +53,18 @@ async function wantCount(db: D1Database, dishId: number): Promise<number> {
 }
 
 // ---- 公开 / 用户端 ----
-const dishes = new Hono<{ Bindings: Env }>();
+const dishes = new Hono<AppEnv>();
 
 // 菜品榜：仅在架菜品，按想吃人数排序；带合法用户 JWT 时附 wanted_by_me
 dishes.get('/', contentGuard, async (c) => {
   const db = c.env.DB;
   const { results } = await db.prepare(
     `SELECT d.id, d.name, d.description, d.image, d.created_at,
+            CASE WHEN d.created_by_user_id IS NULL THEN 1 ELSE 0 END AS chef_pick,
             (SELECT COUNT(*) FROM dish_wants w WHERE w.dish_id = d.id) AS want_count
      FROM dishes d WHERE d.is_active = 1
      ORDER BY want_count DESC, d.created_at DESC, d.id DESC`
-  ).all<DishRow & { want_count: number }>();
+  ).all<DishRow & { want_count: number; chef_pick: number }>();
 
   // 可选鉴权：仅用户角色有 wanted_by_me（dish_wants 只记注册用户）
   const token = (c.req.header('Authorization') ?? '').replace(/^Bearer\s+/i, '');
@@ -73,7 +75,11 @@ dishes.get('/', contentGuard, async (c) => {
       .bind(payload.sub as number).all<{ dish_id: number }>();
     mine.forEach((r) => myWants.add(r.dish_id));
   }
-  return c.json(results.map((d) => ({ ...d, wanted_by_me: myWants.has(d.id) })));
+  return c.json(results.map((d) => ({
+    ...d,
+    chef_pick: Boolean(d.chef_pick),
+    wanted_by_me: myWants.has(d.id),
+  })));
 });
 
 // 用户投稿菜品：直接进库，无需审核
@@ -120,7 +126,7 @@ dishes.post('/:id/want', userAuth, async (c) => {
 });
 
 // ---- 管理端 ----
-export const adminDishes = new Hono<{ Bindings: Env }>();
+export const adminDishes = new Hono<AppEnv>();
 
 adminDishes.use('*', adminAuth);
 

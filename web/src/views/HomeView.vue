@@ -2,6 +2,7 @@
 import { ref, computed, onMounted } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { api } from '../api';
+import { loadSiteStatus } from '../site-status';
 import { localize } from '../i18n';
 import MessageBoard from '../components/MessageBoard.vue';
 
@@ -49,7 +50,7 @@ function fmtDate(s) {
 
 onMounted(async () => {
   try {
-    status.value = await api('/site/status');
+    status.value = await loadSiteStatus();
   } catch { /* 保持默认 */ }
   try {
     const d = await api('/diaries?page=1');

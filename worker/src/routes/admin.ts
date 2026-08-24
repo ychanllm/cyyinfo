@@ -1,9 +1,9 @@
 import { Hono } from 'hono';
 import bcrypt from 'bcryptjs';
-import type { Env } from '../types';
+import type { AppEnv, Env } from '../types';
 import { signJwt, adminAuth } from '../auth';
 import { getSetting, setSetting } from '../guard';
-import { rateLimit, clientIp } from '../security';
+import { enforceRateLimit, clientIp } from '../security';
 import { saveUpload } from '../upload';
 import { logAudit } from '../audit';
 
@@ -12,12 +12,13 @@ interface AdminUserRow {
   username: string;
   password_hash: string;
   display_name: string;
+  auth_version: number;
 }
 
-const admin = new Hono<{ Bindings: Env }>();
+const admin = new Hono<AppEnv>();
 
 admin.post('/login', async (c) => {
-  if (!rateLimit({ limit: 5, windowSec: 900, key: `login:${clientIp(c.req.raw)}` })) {
+  if (!await enforceRateLimit(c.env.LOGIN_RATE_LIMITER, { limit: 5, windowSec: 900, key: `login:${clientIp(c.req.raw)}` })) {
     return c.json({ detail: '尝试过于频繁，请稍后再试' }, 429);
   }
   const { username, password } = await c.req.json<{ username?: string; password?: string }>();
@@ -40,7 +41,7 @@ admin.post('/login', async (c) => {
   if (!user || !bcrypt.compareSync(password, user.password_hash)) {
     return c.json({ detail: '账号或密码错误' }, 401);
   }
-  const token = await signJwt(c.env, { sub: user.id, username: user.username, role: 'admin' });
+  const token = await signJwt(c.env, { sub: user.id, username: user.username, role: 'admin', auth_version: user.auth_version });
   await logAudit(c.env.DB, 'admin_login', user.username, `管理员 ${user.username} 登录后台`);
   return c.json({ token, display_name: user.display_name });
 });
@@ -94,8 +95,8 @@ admin.post('/users', async (c) => {
 admin.put('/users/:id', async (c) => {
   const { display_name, password } = await c.req.json();
   if (password && password.length < 8) return c.json({ detail: '密码至少 8 位' }, 400);
-  await c.env.DB.prepare('UPDATE admin_users SET display_name = COALESCE(?, display_name), password_hash = COALESCE(?, password_hash) WHERE id = ?')
-    .bind(display_name ?? null, password ? bcrypt.hashSync(password, 10) : null, c.req.param('id')).run();
+  await c.env.DB.prepare('UPDATE admin_users SET display_name = COALESCE(?, display_name), password_hash = COALESCE(?, password_hash), auth_version = CASE WHEN ? IS NULL THEN auth_version ELSE auth_version + 1 END WHERE id = ?')
+    .bind(display_name ?? null, password ? bcrypt.hashSync(password, 10) : null, password ? 1 : null, c.req.param('id')).run();
   return c.json({ ok: true });
 });
 
@@ -125,7 +126,7 @@ admin.put('/site-users/:id', async (c) => {
   if (!password || password.length < 6) return c.json({ detail: '密码至少 6 位' }, 400);
   const target = await c.env.DB.prepare('SELECT username FROM users WHERE id = ?')
     .bind(Number(c.req.param('id'))).first<{ username: string }>();
-  const r = await c.env.DB.prepare('UPDATE users SET password_hash = ? WHERE id = ?')
+  const r = await c.env.DB.prepare('UPDATE users SET password_hash = ?, auth_version = auth_version + 1 WHERE id = ?')
     .bind(bcrypt.hashSync(password, 10), Number(c.req.param('id'))).run();
   if (!r.meta.changes) return c.json({ detail: '用户不存在' }, 404);
   await logAudit(c.env.DB, 'password_reset', (c.get('admin') as { username: string }).username, `重置用户 ${target?.username ?? c.req.param('id')} 的密码`);
@@ -173,7 +174,7 @@ admin.get('/settings', async (c) => {
     smtp_host: await getSetting(c.env.DB, 'smtp_host'),
     smtp_port: await getSetting(c.env.DB, 'smtp_port'),
     smtp_user: await getSetting(c.env.DB, 'smtp_user'),
-    smtp_pass: await getSetting(c.env.DB, 'smtp_pass'),
+    smtp_configured: Boolean(await getSetting(c.env.DB, 'smtp_pass')),
     default_recipient: await getSetting(c.env.DB, 'default_recipient'),
     admin_like_user_id: await getSetting(c.env.DB, 'admin_like_user_id'),
   });

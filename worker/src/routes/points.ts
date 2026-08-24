@@ -1,10 +1,10 @@
 import { Hono } from 'hono';
-import type { Env } from '../types';
+import type { AppEnv, Env } from '../types';
 import { userAuth } from '../auth';
 import { contentGuard, getSetting } from '../guard';
 import { logAudit } from '../audit';
 
-const points = new Hono<{ Bindings: Env }>();
+const points = new Hono<AppEnv>();
 
 // ---- 签到/盲盒配置（settings 表，缺省用默认值）----
 async function checkinConfig(db: D1Database) {
@@ -62,15 +62,18 @@ points.post('/checkin', async (c) => {
   const cfg = await checkinConfig(db);
   const earned = streakPoints(cfg, streak);
   try {
-    const [ins] = await db.batch([
+    await db.batch([
       db.prepare('INSERT INTO checkins (user_id, checkin_date, streak_day, points_earned) VALUES (?, ?, ?, ?)')
         .bind(me.id, today, streak, earned),
       db.prepare('UPDATE users SET points = points + ? WHERE id = ?').bind(earned, me.id),
+      db.prepare(
+        `INSERT INTO point_transactions (user_id, change, balance_after, type, ref_id)
+         SELECT ?, ?, points, 'checkin', c.id FROM users u
+         JOIN checkins c ON c.user_id = u.id AND c.checkin_date = ?
+         WHERE u.id = ?`
+      ).bind(me.id, earned, today, me.id),
     ]);
     const balance = await balanceOf(db, me.id);
-    await db.prepare(
-      "INSERT INTO point_transactions (user_id, change, balance_after, type, ref_id) VALUES (?, ?, ?, 'checkin', ?)"
-    ).bind(me.id, earned, balance, ins.meta.last_row_id).run();
     await logAudit(db, 'checkin', me.username, `签到 第${streak}天 +${earned}分`);
     return c.json({ points_earned: earned, streak_day: streak, balance });
   } catch {
@@ -167,21 +170,29 @@ points.post('/box/draw', async (c) => {
       db.prepare("INSERT INTO prize_records (user_id, prize_id, source, points_spent) VALUES (?, ?, 'box', ?)")
         .bind(me.id, prize.id, boxCost)
     );
+    const recordIndex = stmts.length - 1;
+    stmts.push(
+      db.prepare(
+        `INSERT INTO point_transactions (user_id, change, balance_after, type, ref_id)
+         SELECT ?, -?, u.points, 'box', r.id FROM prize_records r
+         JOIN users u ON u.id = r.user_id
+         WHERE r.user_id = ? AND r.prize_id = ? AND r.source = 'box'
+         ORDER BY r.id DESC LIMIT 1`
+      ).bind(me.id, boxCost, me.id, prize.id),
+    );
     const batchRes = await db.batch(stmts);
     if (prize.stock > 0 && !batchRes[0].meta.changes) {
       // 并发下刚好被抽空：删掉同批插入的孤儿记录并退积分
-      const orphanId = batchRes[batchRes.length - 1].meta.last_row_id;
+      const orphanId = batchRes[recordIndex].meta.last_row_id;
       await db.batch([
         db.prepare('DELETE FROM prize_records WHERE id = ?').bind(orphanId),
+        db.prepare("DELETE FROM point_transactions WHERE ref_id = ? AND type = 'box'").bind(orphanId),
         db.prepare('UPDATE users SET points = points + ? WHERE id = ?').bind(boxCost, me.id),
       ]);
       return c.json({ detail: '奖品刚被抽完，请再试一次' }, 409);
     }
-    const recordId = batchRes[batchRes.length - 1].meta.last_row_id;
+    const recordId = batchRes[recordIndex].meta.last_row_id;
     const balance = await balanceOf(db, me.id);
-    await db.prepare(
-      "INSERT INTO point_transactions (user_id, change, balance_after, type, ref_id) VALUES (?, ?, ?, 'box', ?)"
-    ).bind(me.id, -boxCost, balance, recordId).run();
     await logAudit(db, 'box_draw', me.username, `盲盒抽出「${prize.name}」 -${boxCost}分`);
 
     return c.json({
@@ -219,21 +230,29 @@ points.post('/prizes/:id/redeem', async (c) => {
       db.prepare("INSERT INTO prize_records (user_id, prize_id, source, points_spent) VALUES (?, ?, 'redeem', ?)")
         .bind(me.id, prize.id, prize.points_cost)
     );
+    const recordIndex = stmts.length - 1;
+    stmts.push(
+      db.prepare(
+        `INSERT INTO point_transactions (user_id, change, balance_after, type, ref_id)
+         SELECT ?, -?, u.points, 'redeem', r.id FROM prize_records r
+         JOIN users u ON u.id = r.user_id
+         WHERE r.user_id = ? AND r.prize_id = ? AND r.source = 'redeem'
+         ORDER BY r.id DESC LIMIT 1`
+      ).bind(me.id, prize.points_cost, me.id, prize.id),
+    );
     const batchRes = await db.batch(stmts);
     if (prize.stock > 0 && !batchRes[0].meta.changes) {
       // 并发下刚好被抽空：删掉同批插入的孤儿记录并退积分
-      const orphanId = batchRes[batchRes.length - 1].meta.last_row_id;
+      const orphanId = batchRes[recordIndex].meta.last_row_id;
       await db.batch([
         db.prepare('DELETE FROM prize_records WHERE id = ?').bind(orphanId),
+        db.prepare("DELETE FROM point_transactions WHERE ref_id = ? AND type = 'redeem'").bind(orphanId),
         db.prepare('UPDATE users SET points = points + ? WHERE id = ?').bind(prize.points_cost, me.id),
       ]);
       return c.json({ detail: '库存不足' }, 409);
     }
-    const recordId = batchRes[batchRes.length - 1].meta.last_row_id;
+    const recordId = batchRes[recordIndex].meta.last_row_id;
     const balance = await balanceOf(db, me.id);
-    await db.prepare(
-      "INSERT INTO point_transactions (user_id, change, balance_after, type, ref_id) VALUES (?, ?, ?, 'redeem', ?)"
-    ).bind(me.id, -prize.points_cost, balance, recordId).run();
     await logAudit(db, 'redeem', me.username, `兑换「${prize.name}」 -${prize.points_cost}分`);
 
     return c.json({ record_id: recordId, balance });

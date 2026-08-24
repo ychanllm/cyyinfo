@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
-import type { Env } from '../types';
+import type { AppEnv, Env } from '../types';
 
-const storage = new Hono<{ Bindings: Env }>();
+const storage = new Hono<AppEnv>();
 
 // 扩展名 -> 音频 content-type。
 // .m4a 上传时会被 wrangler 误标为 video/mp4，浏览器 <audio> 播放不兼容（尤其 Safari），这里统一修正。

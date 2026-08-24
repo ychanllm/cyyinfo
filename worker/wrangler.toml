@@ -6,6 +6,34 @@ compatibility_flags = ["nodejs_compat"]
 [vars]
 JWT_EXPIRE_HOURS = "72"
 
+[[ratelimits]]
+name = "LOGIN_RATE_LIMITER"
+namespace_id = "1001"
+[ratelimits.simple]
+limit = 5
+period = 60
+
+[[ratelimits]]
+name = "REGISTER_RATE_LIMITER"
+namespace_id = "1002"
+[ratelimits.simple]
+limit = 30
+period = 60
+
+[[ratelimits]]
+name = "PASSCODE_RATE_LIMITER"
+namespace_id = "1003"
+[ratelimits.simple]
+limit = 5
+period = 60
+
+[[ratelimits]]
+name = "MESSAGE_RATE_LIMITER"
+namespace_id = "1004"
+[ratelimits.simple]
+limit = 10
+period = 60
+
 [[d1_databases]]
 binding = "DB"
 database_name = "cyyinfo-db"

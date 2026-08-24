@@ -1,5 +1,5 @@
 import type { Context, Next } from 'hono';
-import type { Env } from './types';
+import type { AppEnv, Env } from './types';
 import { verifyJwt } from './auth';
 
 export async function getSetting(db: D1Database, key: string): Promise<string> {
@@ -13,7 +13,7 @@ export async function setSetting(db: D1Database, key: string, value: string): Pr
 }
 
 // 公开内容守卫：口令为空放行，否则要求 admin/guest/user JWT
-export async function contentGuard(c: Context<{ Bindings: Env }>, next: Next) {
+export async function contentGuard(c: Context<AppEnv>, next: Next) {
   const hash = await getSetting(c.env.DB, 'site_passcode_hash');
   if (!hash) return next();
   const header = c.req.header('Authorization') ?? '';

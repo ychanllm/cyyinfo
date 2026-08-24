@@ -12,7 +12,9 @@ export default defineWorkersConfig(async () => {
       fileParallelism: false,
       poolOptions: {
         workers: {
-          wrangler: { configPath: './wrangler.toml' },
+          // The test pool's config parser predates Rate Limit bindings. Keep
+          // production bindings in wrangler.toml and use a test-only config.
+          wrangler: { configPath: './wrangler.test.toml' },
           // Windows 上 miniflare 3.20241230.0 的 R2 isolated storage 清理会因
           // sqlite 文件被占用而 EBUSY（Isolated storage failed），故关闭隔离存储，
           // 改为共享存储 + 各测试自行还原数据（passcode 测试已还原口令）。

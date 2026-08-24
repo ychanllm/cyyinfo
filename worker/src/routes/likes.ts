@@ -1,11 +1,11 @@
 import { Hono } from 'hono';
 import type { Context, Next } from 'hono';
-import type { Env } from '../types';
+import type { AppEnv, Env } from '../types';
 import { verifyJwt } from '../auth';
 import { contentGuard, getSetting } from '../guard';
 import { logAudit } from '../audit';
 
-const likes = new Hono<{ Bindings: Env }>();
+const likes = new Hono<AppEnv>();
 
 const TARGET_TYPES = ['album', 'photo', 'diary', 'message'];
 const MAX_PER_USER = 50; // 单用户单目标连赞上限
@@ -37,7 +37,7 @@ async function resolveLikerId(db: D1Database, payload: Record<string, unknown>):
 }
 
 // 点赞鉴权：注册用户或管理员；管理员未配置归属用户时 400 提示
-async function likerAuth(c: Context<{ Bindings: Env }>, next: Next) {
+async function likerAuth(c: Context<AppEnv>, next: Next) {
   const header = c.req.header('Authorization') ?? '';
   const token = header.replace(/^Bearer\s+/i, '');
   const payload = token ? await verifyJwt(c.env, token) : null;
@@ -52,7 +52,7 @@ async function likerAuth(c: Context<{ Bindings: Env }>, next: Next) {
 }
 
 // 从可选的 Authorization 中解析点赞用户 id（无 token / 访客 token 视为未登录；管理员映射到归属用户）
-async function optionalUserId(c: Context<{ Bindings: Env }>): Promise<number | null> {
+async function optionalUserId(c: Context<AppEnv>): Promise<number | null> {
   const header = c.req.header('Authorization') ?? '';
   const token = header.replace(/^Bearer\s+/i, '');
   const payload = token ? await verifyJwt(c.env, token) : null;
@@ -62,7 +62,8 @@ async function optionalUserId(c: Context<{ Bindings: Env }>): Promise<number | n
 // 点赞/取消点赞（注册用户或配置了归属用户的管理员）
 likes.post('/toggle', likerAuth, async (c) => {
   const me = c.get('liker') as { id: number; username: string };
-  const body = await c.req.json<{ target_type?: string; target_id?: number }>().catch(() => ({}));
+  const body = await c.req.json<{ target_type?: string; target_id?: number }>()
+    .catch((): { target_type?: string; target_id?: number } => ({}));
   const target = parseTarget(body.target_type, body.target_id);
   if (!target) return c.json({ detail: '非法点赞目标' }, 400);
 
@@ -85,7 +86,8 @@ likes.post('/toggle', likerAuth, async (c) => {
 // 连赞：同一用户可累加多个赞（注册用户或配置了归属用户的管理员），单用户单目标上限 50
 likes.post('/burst', likerAuth, async (c) => {
   const me = c.get('liker') as { id: number; username: string };
-  const body = await c.req.json<{ target_type?: string; target_id?: number; delta?: number }>().catch(() => ({}));
+  const body = await c.req.json<{ target_type?: string; target_id?: number; delta?: number }>()
+    .catch((): { target_type?: string; target_id?: number; delta?: number } => ({}));
   const target = parseTarget(body.target_type, body.target_id);
   if (!target) return c.json({ detail: '非法点赞目标' }, 400);
   const delta = body.delta;

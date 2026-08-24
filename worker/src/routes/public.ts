@@ -1,17 +1,36 @@
 import { Hono } from 'hono';
 import bcrypt from 'bcryptjs';
-import type { Env } from '../types';
+import type { AppEnv, Env } from '../types';
 import { signJwt } from '../auth';
-import { rateLimit, clientIp } from '../security';
+import { enforceRateLimit, clientIp } from '../security';
 import { contentGuard, getSetting } from '../guard';
 import { sendEmail } from '../smtp';
 import { logAudit } from '../audit';
 
-const pub = new Hono<{ Bindings: Env }>();
+const pub = new Hono<AppEnv>();
+
+interface ReminderRow {
+  id: number;
+  title: string;
+  content: string;
+  recipient: string;
+}
 
 // 公开内容按 ?lang= 返回对应语言（默认中文），英文为空时回退中文
 function localized(c: { req: { query: (k: string) => string | undefined } }): 'en' | 'zh' {
   return c.req.query('lang') === 'en' ? 'en' : 'zh';
+}
+
+function parsePagination(c: { req: { query: (k: string) => string | undefined } }, defaultSize: number, maxSize: number) {
+  const pageRaw = c.req.query('page');
+  const sizeRaw = c.req.query('size');
+  const pageValue = Number(pageRaw);
+  const sizeValue = Number(sizeRaw);
+  const page = Number.isSafeInteger(pageValue) && pageValue > 0 ? pageValue : 1;
+  const size = Number.isSafeInteger(sizeValue) && sizeValue > 0
+    ? Math.min(sizeValue, maxSize)
+    : defaultSize;
+  return { page, size, offset: (page - 1) * size, requested: pageRaw !== undefined || sizeRaw !== undefined };
 }
 
 pub.get('/site/status', async (c) => {
@@ -34,7 +53,7 @@ pub.get('/site/status', async (c) => {
 });
 
 pub.post('/passcode/verify', async (c) => {
-  if (!rateLimit({ limit: 5, windowSec: 900, key: `passcode:${clientIp(c.req.raw)}` })) {
+  if (!await enforceRateLimit(c.env.PASSCODE_RATE_LIMITER, { limit: 5, windowSec: 900, key: `passcode:${clientIp(c.req.raw)}` })) {
     return c.json({ detail: '尝试过于频繁，请稍后再试' }, 429);
   }
   const hash = await getSetting(c.env.DB, 'site_passcode_hash');
@@ -59,9 +78,12 @@ pub.post('/reminders/check', async (c) => {
   const nowStr = `${now.getUTCFullYear()}-${p(now.getUTCMonth() + 1)}-${p(now.getUTCDate())} `
     + `${p(now.getUTCHours())}:${p(now.getUTCMinutes())}:${p(now.getUTCSeconds())}`;
 
-  const { results: due } = await c.env.DB.prepare(
-    'SELECT * FROM reminders WHERE status = ? AND send_at <= ? ORDER BY send_at'
-  ).bind('pending', nowStr).all();
+  const { results: candidates } = await c.env.DB.prepare(
+    `SELECT * FROM reminders
+     WHERE send_at <= ?
+       AND (status = 'pending' OR (status = 'processing' AND updated_at <= datetime('now', '-10 minutes')))
+     ORDER BY send_at LIMIT 50`
+  ).bind(nowStr).all<ReminderRow>();
 
   const smtp = {
     host: (await getSetting(c.env.DB, 'smtp_host')) || 'smtp.qq.com',
@@ -73,7 +95,15 @@ pub.post('/reminders/check', async (c) => {
   const defaultRecipient = await getSetting(c.env.DB, 'default_recipient');
 
   let sent = 0;
-  for (const r of due) {
+  let checked = 0;
+  for (const r of candidates) {
+    const claim = await c.env.DB.prepare(
+      `UPDATE reminders SET status='processing', error='', updated_at=datetime('now')
+       WHERE id=?
+         AND (status = 'pending' OR (status = 'processing' AND updated_at <= datetime('now', '-10 minutes')))`
+    ).bind(r.id).run();
+    if (!claim.meta.changes) continue;
+    checked++;
     const to = r.recipient || defaultRecipient;
     if (!to || !smtp.user || !smtp.pass) {
       await c.env.DB.prepare("UPDATE reminders SET status='failed', error='SMTP 未配置', updated_at=datetime('now') WHERE id=?")
@@ -91,14 +121,15 @@ pub.post('/reminders/check', async (c) => {
         .bind(msg, r.id).run();
     }
   }
-  return c.json({ checked: due.length, sent, failed: due.length - sent });
+  return c.json({ checked, sent, failed: checked - sent });
 });
 
 // 内容接口挂在 contentGuard 之后（后续任务在此追加路由）
-const content = new Hono<{ Bindings: Env }>();
+const content = new Hono<AppEnv>();
 content.use('*', contentGuard);
 content.get('/albums', async (c) => {
   const isEn = localized(c) === 'en';
+  const pagination = parsePagination(c, 12, 50);
   const sql = isEn
     ? `SELECT a.id, a.sort_order, a.created_at, a.cover_photo_id,
               COALESCE(NULLIF(a.title_en,''), a.title) AS title,
@@ -107,8 +138,14 @@ content.get('/albums', async (c) => {
        FROM albums a LEFT JOIN photos p ON p.id = a.cover_photo_id AND p.hidden = 0
        ORDER BY a.sort_order, a.id`
     : 'SELECT a.*, p.filename AS cover_filename FROM albums a LEFT JOIN photos p ON p.id = a.cover_photo_id AND p.hidden = 0 ORDER BY a.sort_order, a.id';
-  const { results } = await c.env.DB.prepare(sql).all();
-  return c.json(results);
+  const query = pagination.requested ? `${sql} LIMIT ? OFFSET ?` : sql;
+  const stmt = pagination.requested
+    ? c.env.DB.prepare(query).bind(pagination.size, pagination.offset)
+    : c.env.DB.prepare(query);
+  const { results } = await stmt.all();
+  if (!pagination.requested) return c.json(results);
+  const total = await c.env.DB.prepare('SELECT COUNT(*) AS n FROM albums').first<{ n: number }>();
+  return c.json({ items: results, total: total?.n ?? 0, page: pagination.page, size: pagination.size });
 });
 
 content.get('/albums/:id', async (c) => {
@@ -132,8 +169,7 @@ content.get('/albums/:id', async (c) => {
 
 content.get('/diaries', async (c) => {
   const isEn = localized(c) === 'en';
-  const page = Math.max(1, Number(c.req.query('page')) || 1);
-  const size = 10;
+  const { page, size, offset } = parsePagination(c, 10, 50);
   // 分类筛选：category 为正整数时按分类过滤，非法/空则忽略
   const catRaw = c.req.query('category');
   const catId = catRaw !== undefined && catRaw !== '' ? Number(catRaw) : NaN;
@@ -158,8 +194,8 @@ content.get('/diaries', async (c) => {
        LEFT JOIN diary_categories c ON c.id = d.category_id
        WHERE d.status = 'published' ${categorySql}
        ORDER BY d.published_at DESC LIMIT ? OFFSET ?`;
-  const { results } = await c.env.DB.prepare(listSql).bind(...catArgs, size, (page - 1) * size).all();
-  return c.json({ items: results, total: total?.n ?? 0 });
+  const { results } = await c.env.DB.prepare(listSql).bind(...catArgs, size, offset).all();
+  return c.json({ items: results, total: total?.n ?? 0, page, size });
 });
 
 // 分类列表（供前台筛选 chips，含已发布日记数）
@@ -202,6 +238,7 @@ content.get('/diaries/:slugOrId', async (c) => {
 
 content.get('/music/albums', async (c) => {
   const isEn = localized(c) === 'en';
+  const pagination = parsePagination(c, 12, 50);
   const sql = isEn
     ? `SELECT m.id, m.cover_filename, m.year, m.sort_order,
               COALESCE(NULLIF(m.title_en,''), m.title) AS title,
@@ -210,8 +247,14 @@ content.get('/music/albums', async (c) => {
        GROUP BY m.id ORDER BY m.sort_order, m.id`
     : `SELECT m.*, COUNT(s.id) AS song_count FROM music_albums m
        LEFT JOIN songs s ON s.album_id = m.id GROUP BY m.id ORDER BY m.sort_order, m.id`;
-  const { results } = await c.env.DB.prepare(sql).all();
-  return c.json(results);
+  const query = pagination.requested ? `${sql} LIMIT ? OFFSET ?` : sql;
+  const stmt = pagination.requested
+    ? c.env.DB.prepare(query).bind(pagination.size, pagination.offset)
+    : c.env.DB.prepare(query);
+  const { results } = await stmt.all();
+  if (!pagination.requested) return c.json(results);
+  const total = await c.env.DB.prepare('SELECT COUNT(*) AS n FROM music_albums').first<{ n: number }>();
+  return c.json({ items: results, total: total?.n ?? 0, page: pagination.page, size: pagination.size });
 });
 
 content.get('/messages', async (c) => {
@@ -227,7 +270,7 @@ content.get('/messages', async (c) => {
 });
 
 content.post('/messages', async (c) => {
-  if (!rateLimit({ limit: 10, windowSec: 3600, key: `msg:${clientIp(c.req.raw)}` })) {
+  if (!await enforceRateLimit(c.env.MESSAGE_RATE_LIMITER, { limit: 10, windowSec: 3600, key: `msg:${clientIp(c.req.raw)}` })) {
     return c.json({ detail: '留言过于频繁，请稍后再试' }, 429);
   }
   const { nickname, content: text, target_type = 'site', target_id = null, quote_text = null, parent_id = null } = await c.req.json();
@@ -267,7 +310,8 @@ content.post('/messages', async (c) => {
 // 浏览量上报：upsert 自增，前端用 sessionStorage 去重（同一会话同一目标只报一次）
 const VIEW_TARGET_TYPES = ['album', 'photo', 'diary'];
 content.post('/views', async (c) => {
-  const { target_type, target_id } = await c.req.json<{ target_type?: string; target_id?: unknown }>().catch(() => ({}));
+  const { target_type, target_id } = await c.req.json<{ target_type?: string; target_id?: unknown }>()
+    .catch((): { target_type?: string; target_id?: unknown } => ({}));
   const id = typeof target_id === 'string' ? Number(target_id) : target_id;
   if (!target_type || !VIEW_TARGET_TYPES.includes(target_type)) return c.json({ detail: '非法目标类型' }, 400);
   if (typeof id !== 'number' || !Number.isInteger(id) || id <= 0) return c.json({ detail: '非法目标 ID' }, 400);

@@ -5,27 +5,25 @@ import { useI18n } from 'vue-i18n';
 import { api, getUserToken } from '../api';
 import { localize } from '../i18n';
 
-defineOptions({ name: 'DishesView' });
+defineOptions({ name: 'StoresView' });
 
 const { t } = useI18n();
 const router = useRouter();
 const route = useRoute();
 
-const dishes = ref([]);
+const stores = ref([]);
 const loading = ref(true);
 const error = ref('');
-const sections = computed(() => [
-  { key: 'chef', title: t('dishes.chefTitle'), subtitle: t('dishes.chefSubtitle'), items: dishes.value.filter((d) => d.chef_pick) },
-  { key: 'community', title: t('dishes.communityTitle'), subtitle: '', items: dishes.value.filter((d) => !d.chef_pick) },
-].filter((section) => section.items.length));
 
 const loggedIn = computed(() => Boolean(getUserToken()));
 
 // ---- 投稿表单 ----
 const formOpen = ref(false);
 const formName = ref('');
-const formDesc = ref('');
+const formAddress = ref('');
+const formNote = ref('');
 const formFile = ref(null);
+const formDishes = ref([{ name: '', note: '' }]);
 const saving = ref(false);
 const formError = ref('');
 
@@ -33,9 +31,9 @@ async function load() {
   loading.value = true;
   error.value = '';
   try {
-    dishes.value = await api('/dishes');
+    stores.value = await api('/stores');
   } catch (e) {
-    error.value = e.message || t('dishes.loadFailed');
+    error.value = e.message || t('stores.loadFailed');
   } finally {
     loading.value = false;
   }
@@ -43,21 +41,27 @@ async function load() {
 
 onMounted(load);
 
-// 想吃 toggle：未登录引导去登录页（沿用项目 redirect 惯例）
-async function toggleWant(d) {
+function openForm() {
   if (!loggedIn.value) {
     router.push({ path: localize('/login'), query: { redirect: route.fullPath } });
     return;
   }
-  if (d._busy) return;
-  d._busy = true;
-  try {
-    const data = await api(`/dishes/${d.id}/want`, { method: 'POST' });
-    d.wanted_by_me = data.wanted;
-    d.want_count = data.want_count;
-  } catch { /* 错误已由 api.js 统一处理 */ } finally {
-    d._busy = false;
-  }
+  formOpen.value = true;
+  formName.value = '';
+  formAddress.value = '';
+  formNote.value = '';
+  formFile.value = null;
+  formDishes.value = [{ name: '', note: '' }];
+  formError.value = '';
+}
+
+function addDishRow() {
+  if (formDishes.value.length >= 30) return;
+  formDishes.value.push({ name: '', note: '' });
+}
+
+function removeDishRow(i) {
+  formDishes.value.splice(i, 1);
 }
 
 function onFileChange(e) {
@@ -66,7 +70,15 @@ function onFileChange(e) {
 
 async function submit() {
   if (!formName.value.trim()) {
-    formError.value = t('dishes.nameRequired');
+    formError.value = t('stores.nameRequired');
+    return;
+  }
+  // 菜品至少一个有效菜名，否则去掉空行再校验
+  const dishes = formDishes.value
+    .map((d) => ({ name: d.name.trim(), note: d.note.trim() }))
+    .filter((d) => d.name || d.note);
+  if (dishes.some((d) => !d.name)) {
+    formError.value = t('stores.dishNameRequired');
     return;
   }
   saving.value = true;
@@ -74,13 +86,12 @@ async function submit() {
   try {
     const form = new FormData();
     form.append('name', formName.value.trim());
-    form.append('description', formDesc.value.trim());
+    form.append('address', formAddress.value.trim());
+    form.append('note', formNote.value.trim());
+    form.append('dishes', JSON.stringify(dishes));
     if (formFile.value) form.append('image', formFile.value);
-    await api('/dishes', { method: 'POST', form });
+    await api('/stores', { method: 'POST', form });
     formOpen.value = false;
-    formName.value = '';
-    formDesc.value = '';
-    formFile.value = null;
     await load();
   } catch (e) {
     formError.value = e.message;
@@ -91,79 +102,103 @@ async function submit() {
 </script>
 
 <template>
-  <div class="dishes">
+  <div class="stores">
     <div class="head">
-      <h1 class="page-title">{{ t('dishes.title') }}</h1>
-      <button v-if="loggedIn" class="submit-btn" @click="formOpen = true">
-        {{ t('dishes.submit') }}
+      <h1 class="page-title">{{ t('stores.title') }}</h1>
+      <button class="submit-btn" @click="openForm">
+        {{ t('stores.submit') }}
       </button>
     </div>
-    <p class="subtitle">{{ t('dishes.subtitle') }}</p>
+    <p class="subtitle">{{ t('stores.subtitle') }}</p>
 
-    <p v-if="loading" class="hint">{{ t('dishes.loading') }}</p>
+    <p v-if="loading" class="hint">{{ t('stores.loading') }}</p>
     <p v-else-if="error" class="hint">{{ error }}</p>
-    <p v-else-if="!dishes.length" class="hint">{{ t('dishes.empty') }}</p>
+    <p v-else-if="!stores.length" class="hint">{{ t('stores.empty') }}</p>
 
-    <div v-else>
-      <section v-for="section in sections" :key="section.key" class="dish-section">
-        <div class="section-heading">
-          <h2>{{ section.title }}</h2>
-          <p v-if="section.subtitle">{{ section.subtitle }}</p>
-        </div>
-        <div class="grid">
+    <div v-else class="grid">
       <div
-        v-for="(d, i) in section.items"
-        :key="d.id"
+        v-for="(s, i) in stores"
+        :key="s.id"
         class="polaroid card"
         :style="{ '--tilt': i % 2 ? '1.3deg' : '-1.4deg' }"
       >
         <span class="tape" :class="i % 3 === 0 ? 'peach' : i % 3 === 1 ? 'stamp' : ''"></span>
         <div class="cover">
-          <img v-if="d.image" :src="`/uploads/${d.image}`" :alt="d.name" class="cover-img" />
+          <img v-if="s.image" :src="`/uploads/${s.image}`" :alt="s.name" class="cover-img" />
           <div v-else class="cover-placeholder">
-            <span class="placeholder-emoji">🍲</span>
+            <span class="placeholder-emoji">🏮</span>
           </div>
         </div>
         <div class="meta">
-          <h2 class="title">{{ d.name }}</h2>
-          <p v-if="d.description" class="desc">{{ d.description }}</p>
-          <button
-            type="button"
-            class="want-btn"
-            :class="{ wanted: d.wanted_by_me }"
-            :disabled="d._busy"
-            :title="loggedIn ? t('dishes.wantTip') : t('dishes.loginToWant')"
-            @click="toggleWant(d)"
-          >
-            <span class="heart">{{ d.wanted_by_me ? '❤️' : '🤍' }}</span>
-            {{ t('dishes.want') }} {{ d.want_count }}
-          </button>
+          <h2 class="title">{{ s.name }}</h2>
+          <p v-if="s.address" class="addr">📍 {{ s.address }}</p>
+          <p v-if="s.note" class="desc">{{ s.note }}</p>
+          <div v-if="s.dishes.length" class="dishes">
+            <span v-for="d in s.dishes" :key="d.id" class="dish-chip" :title="d.note || d.name">
+              {{ d.name }}<template v-if="d.note"> · {{ d.note }}</template>
+            </span>
+          </div>
+          <p v-else class="no-dishes">{{ t('stores.noDishes') }}</p>
         </div>
       </div>
-        </div>
-      </section>
     </div>
 
     <div v-if="formOpen" class="modal" @click.self="formOpen = false">
       <form class="form-card" @submit.prevent="submit">
-        <h3>{{ t('dishes.submitTitle') }}</h3>
+        <h3>{{ t('stores.submitTitle') }}</h3>
         <label class="field">
-          {{ t('dishes.name') }}
-          <input v-model="formName" type="text" maxlength="50" :placeholder="t('dishes.namePh')" />
+          {{ t('stores.name') }}
+          <input v-model="formName" type="text" maxlength="50" :placeholder="t('stores.namePh')" />
         </label>
         <label class="field">
-          {{ t('dishes.desc') }}
-          <textarea v-model="formDesc" rows="3" maxlength="200" :placeholder="t('dishes.descPh')"></textarea>
+          {{ t('stores.address') }}
+          <input v-model="formAddress" type="text" maxlength="100" :placeholder="t('stores.addressPh')" />
         </label>
         <label class="field">
-          {{ t('dishes.image') }}
+          {{ t('stores.note') }}
+          <textarea v-model="formNote" rows="2" maxlength="300" :placeholder="t('stores.notePh')"></textarea>
+        </label>
+        <label class="field">
+          {{ t('stores.image') }}
           <input type="file" accept="image/*" @change="onFileChange" />
         </label>
+
+        <div class="field">
+          <div class="dishes-head">
+            <span>{{ t('stores.dishesLabel') }}</span>
+            <button type="button" class="add-dish" @click="addDishRow">{{ t('stores.addDish') }}</button>
+          </div>
+          <div
+            v-for="(d, i) in formDishes"
+            :key="i"
+            class="dish-row"
+          >
+            <input
+              v-model="d.name"
+              type="text"
+              maxlength="50"
+              :placeholder="t('stores.dishNamePh')"
+            />
+            <input
+              v-model="d.note"
+              type="text"
+              maxlength="100"
+              :placeholder="t('stores.dishNotePh')"
+            />
+            <button
+              v-if="formDishes.length > 1"
+              type="button"
+              class="remove-dish"
+              @click="removeDishRow(i)"
+            >✕</button>
+          </div>
+        </div>
+
         <p v-if="formError" class="form-error">{{ formError }}</p>
         <div class="actions">
-          <button type="button" class="btn" @click="formOpen = false">{{ t('dishes.cancel') }}</button>
+          <button type="button" class="btn" @click="formOpen = false">{{ t('stores.cancel') }}</button>
           <button type="submit" class="btn primary" :disabled="saving">
-            {{ saving ? t('dishes.saving') : t('dishes.save') }}
+            {{ saving ? t('stores.saving') : t('stores.save') }}
           </button>
         </div>
       </form>
@@ -204,26 +239,6 @@ async function submit() {
   font-size: 14px;
   text-align: center;
   padding: 32px 0;
-}
-.dish-section + .dish-section {
-  margin-top: 42px;
-}
-.section-heading {
-  display: flex;
-  align-items: baseline;
-  gap: 12px;
-  margin-bottom: 6px;
-}
-.section-heading h2 {
-  font-family: var(--font-title);
-  font-size: 24px;
-  font-weight: 400;
-  color: var(--color-text);
-}
-.section-heading p {
-  margin: 2px 0 0;
-  color: var(--color-text-light);
-  font-size: 13px;
 }
 .grid {
   display: grid;
@@ -275,6 +290,11 @@ async function submit() {
   font-weight: 400;
   margin-bottom: 4px;
 }
+.addr {
+  font-size: 13px;
+  color: var(--color-text-light);
+  margin-bottom: 2px;
+}
 .desc {
   font-size: 13px;
   color: var(--color-text-light);
@@ -283,35 +303,26 @@ async function submit() {
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
-.want-btn {
+.dishes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: center;
   margin-top: 8px;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px 14px;
-  border: 1px solid var(--color-border);
+}
+.dish-chip {
+  display: inline-block;
+  padding: 3px 10px;
   border-radius: 999px;
-  background: var(--color-card);
+  background: var(--bg-deep);
+  color: var(--color-text);
+  font-size: 12px;
+  border: 1px solid var(--color-border);
+}
+.no-dishes {
+  margin-top: 8px;
+  font-size: 12px;
   color: var(--color-text-light);
-  font-size: 13px;
-  cursor: pointer;
-  transition: color 0.2s, border-color 0.2s;
-}
-.want-btn:hover {
-  border-color: var(--color-primary);
-  color: var(--color-primary);
-}
-.want-btn.wanted {
-  border-color: var(--color-primary);
-  color: var(--color-stamp);
-}
-.want-btn:disabled {
-  cursor: default;
-  opacity: 0.7;
-}
-.heart {
-  font-size: 14px;
-  line-height: 1;
 }
 .modal {
   position: fixed;
@@ -325,7 +336,9 @@ async function submit() {
 }
 .form-card {
   width: 100%;
-  max-width: 420px;
+  max-width: 460px;
+  max-height: 88vh;
+  overflow-y: auto;
   background: var(--color-card);
   border-radius: var(--radius);
   box-shadow: var(--shadow-lg);
@@ -361,6 +374,40 @@ async function submit() {
 .field input:focus,
 .field textarea:focus {
   border-color: var(--color-primary);
+}
+.dishes-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+.add-dish {
+  border: 1px dashed var(--color-primary);
+  background: none;
+  color: var(--color-primary);
+  border-radius: 999px;
+  padding: 3px 12px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.dish-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.dish-row input {
+  flex: 1;
+}
+.dish-row input:first-child {
+  flex: 2;
+}
+.remove-dish {
+  border: none;
+  background: none;
+  color: var(--color-text-light);
+  font-size: 14px;
+  cursor: pointer;
+  padding: 0 2px;
 }
 .form-error {
   color: #c0392b;

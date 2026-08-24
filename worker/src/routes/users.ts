@@ -1,13 +1,13 @@
 import { Hono } from 'hono';
 import bcrypt from 'bcryptjs';
-import type { Env } from '../types';
+import type { AppEnv, Env } from '../types';
 import { signJwt, verifyJwt, userAuth } from '../auth';
-import { rateLimit, clientIp } from '../security';
+import { enforceRateLimit, clientIp } from '../security';
 import { getSetting } from '../guard';
 import { saveUpload } from '../upload';
 import { logAudit } from '../audit';
 
-const users = new Hono<{ Bindings: Env }>();
+const users = new Hono<AppEnv>();
 
 // 用户名：2-20 位字母/数字/下划线/中文
 const USERNAME_RE = /^[\w一-龥]{2,20}$/;
@@ -17,10 +17,11 @@ interface UserRow {
   username: string;
   password_hash: string;
   points: number;
+  auth_version: number;
 }
 
 users.post('/auth/register', async (c) => {
-  if (!rateLimit({ limit: 30, windowSec: 900, key: `register:${clientIp(c.req.raw)}` })) {
+  if (!await enforceRateLimit(c.env.REGISTER_RATE_LIMITER, { limit: 30, windowSec: 900, key: `register:${clientIp(c.req.raw)}` })) {
     return c.json({ detail: '尝试过于频繁，请稍后再试' }, 429);
   }
   // 站点启用口令时，注册前必须先通过口令（guest/admin/user JWT 均可）
@@ -41,12 +42,12 @@ users.post('/auth/register', async (c) => {
   const r = await c.env.DB.prepare('INSERT INTO users (username, password_hash) VALUES (?, ?)')
     .bind(name, bcrypt.hashSync(password, 10)).run();
   await logAudit(c.env.DB, 'user_register', name, `用户 ${name} 注册`);
-  const token = await signJwt(c.env, { sub: r.meta.last_row_id, username: name, role: 'user' }, 24 * 7);
+  const token = await signJwt(c.env, { sub: r.meta.last_row_id, username: name, role: 'user', auth_version: 0 }, 24 * 7);
   return c.json({ token, username: name });
 });
 
 users.post('/auth/login', async (c) => {
-  if (!rateLimit({ limit: 5, windowSec: 900, key: `userlogin:${clientIp(c.req.raw)}` })) {
+  if (!await enforceRateLimit(c.env.LOGIN_RATE_LIMITER, { limit: 5, windowSec: 900, key: `userlogin:${clientIp(c.req.raw)}` })) {
     return c.json({ detail: '尝试过于频繁，请稍后再试' }, 429);
   }
   const { username, password } = await c.req.json<{ username?: string; password?: string }>();
@@ -56,7 +57,7 @@ users.post('/auth/login', async (c) => {
   if (!user || !bcrypt.compareSync(password, user.password_hash)) {
     return c.json({ detail: '用户名或密码错误' }, 401);
   }
-  const token = await signJwt(c.env, { sub: user.id, username: user.username, role: 'user' }, 24 * 7);
+  const token = await signJwt(c.env, { sub: user.id, username: user.username, role: 'user', auth_version: user.auth_version }, 24 * 7);
   await logAudit(c.env.DB, 'user_login', user.username, `用户 ${user.username} 登录`);
   return c.json({ token, username: user.username, points: user.points });
 });

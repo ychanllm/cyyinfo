@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router';
 import { api, getGuestToken, getAdminToken, getUserToken } from './api';
 import { i18n } from './i18n';
+import { loadSiteStatus } from './site-status';
 
 const routes = [
   { path: '/', name: 'home', component: () => import('./views/HomeView.vue') },
@@ -15,6 +16,7 @@ const routes = [
   { path: '/music/:id', name: 'music-album', component: () => import('./views/MusicAlbumView.vue') },
   { path: '/points', name: 'points', component: () => import('./views/PointsView.vue'), meta: { user: true } },
   { path: '/dishes', name: 'dishes', component: () => import('./views/DishesView.vue') },
+  { path: '/stores', name: 'stores', component: () => import('./views/StoresView.vue') },
   {
     path: '/admin/login',
     name: 'admin-login',
@@ -34,6 +36,7 @@ const routes = [
       { path: 'diaries/:id/edit', name: 'admin-diary-edit', component: () => import('./views/admin/DiaryEditView.vue') },
       { path: 'music', name: 'admin-music', component: () => import('./views/admin/MusicView.vue') },
       { path: 'dishes', name: 'admin-dishes', component: () => import('./views/admin/DishesView.vue') },
+      { path: 'stores', name: 'admin-stores', component: () => import('./views/admin/StoresView.vue') },
       { path: 'reminders', name: 'admin-reminders', component: () => import('./views/admin/RemindersView.vue') },
       { path: 'messages', name: 'admin-messages', component: () => import('./views/admin/MessagesView.vue') },
       { path: 'users', name: 'admin-users', component: () => import('./views/admin/UsersView.vue') },
@@ -88,7 +91,7 @@ router.beforeEach(async (to) => {
   // 访客口令守卫：已登录管理员可免口令浏览公开页
   if (passcodeEnabled === null) {
     try {
-      const s = await api('/site/status');
+      const s = await loadSiteStatus();
       passcodeEnabled = s.passcode_enabled;
     } catch { passcodeEnabled = false; }
   }

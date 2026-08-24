@@ -74,6 +74,28 @@ button {
   font: inherit;
 }
 
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  margin: 28px 0 8px;
+  color: var(--color-text-light);
+  font-size: 14px;
+}
+.pager button {
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-card);
+  color: var(--color-text);
+  padding: 6px 12px;
+  cursor: pointer;
+}
+.pager button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
 /* Markdown 正文排版（公众号阅读风格，日记阅读页 / 后台预览共用） */
 .md-body {
   font-size: 16px;

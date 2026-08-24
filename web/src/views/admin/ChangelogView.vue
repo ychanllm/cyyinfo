@@ -58,6 +58,14 @@ const TYPE_KEYS = {
   prize_delete: 'typePrizeDelete',
   prize_record_use: 'typePrizeRecordUse',
   prize_record_cancel: 'typePrizeRecordCancel',
+  store_create: 'typeStoreCreate',
+  store_update: 'typeStoreUpdate',
+  store_off: 'typeStoreOff',
+  store_restore: 'typeStoreRestore',
+  store_delete: 'typeStoreDelete',
+  store_dish_create: 'typeStoreDishCreate',
+  store_dish_update: 'typeStoreDishUpdate',
+  store_dish_delete: 'typeStoreDishDelete',
 };
 
 function typeLabel(type) {

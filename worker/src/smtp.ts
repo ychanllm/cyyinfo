@@ -41,7 +41,7 @@ function buildMessage(from: string, to: string, subject: string, text: string): 
 
 export async function sendEmail(cfg: SmtpConfig, to: string, subject: string, text: string): Promise<void> {
   // 隐式 TLS：连接即加密，无需 STARTTLS 升级
-  const socket = connect({ hostname: cfg.host, port: cfg.port }, { secureTransport: 'on' });
+  const socket = connect({ hostname: cfg.host, port: cfg.port }, { secureTransport: 'on', allowHalfOpen: false });
   const writer = socket.writable.getWriter();
   const reader = socket.readable.getReader();
   const encoder = new TextEncoder();
