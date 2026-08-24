@@ -68,4 +68,29 @@ describe('账号与设置', () => {
     const s2 = await (await SELF.fetch('http://x/api/admin/settings', { headers: auth() })).json() as any;
     expect(s2.admin_like_user_id).toBe('');
   });
+
+  it('菜单排序:PUT admin_nav_order 后 GET 读回;非法 JSON 数组 400', async () => {
+    const order = JSON.stringify(['settings', 'stats', 'media']);
+    let res = await SELF.fetch('http://x/api/admin/settings', {
+      method: 'PUT', headers: auth(), body: JSON.stringify({ admin_nav_order: order }),
+    });
+    expect(res.status).toBe(200);
+    const s = await (await SELF.fetch('http://x/api/admin/settings', { headers: auth() })).json() as any;
+    expect(s.admin_nav_order).toBe(order);
+
+    res = await SELF.fetch('http://x/api/admin/settings', {
+      method: 'PUT', headers: auth(), body: JSON.stringify({ admin_nav_order: 'not-json' }),
+    });
+    expect(res.status).toBe(400);
+    res = await SELF.fetch('http://x/api/admin/settings', {
+      method: 'PUT', headers: auth(), body: JSON.stringify({ admin_nav_order: '{"a":1}' }),
+    });
+    expect(res.status).toBe(400);
+
+    // 恢复默认(空串=未设置)
+    res = await SELF.fetch('http://x/api/admin/settings', {
+      method: 'PUT', headers: auth(), body: JSON.stringify({ admin_nav_order: '' }),
+    });
+    expect(res.status).toBe(200);
+  });
 });

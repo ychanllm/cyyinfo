@@ -169,12 +169,8 @@ admin.get('/settings', async (c) => {
     hero_label_en: await getSetting(c.env.DB, 'hero_label_en'),
     hero_title: await getSetting(c.env.DB, 'hero_title'),
     hero_title_en: await getSetting(c.env.DB, 'hero_title_en'),
-    smtp_host: await getSetting(c.env.DB, 'smtp_host'),
-    smtp_port: await getSetting(c.env.DB, 'smtp_port'),
-    smtp_user: await getSetting(c.env.DB, 'smtp_user'),
-    smtp_configured: Boolean(await getSetting(c.env.DB, 'smtp_pass')),
-    default_recipient: await getSetting(c.env.DB, 'default_recipient'),
     admin_like_user_id: await getSetting(c.env.DB, 'admin_like_user_id'),
+    admin_nav_order: await getSetting(c.env.DB, 'admin_nav_order'),
   });
 });
 
@@ -183,8 +179,7 @@ admin.put('/settings', async (c) => {
   const {
     site_name, site_name_en, anniversary_date, passcode, background_color, hero_label, hero_label_en,
     hero_title, hero_title_en,
-    smtp_host, smtp_port, smtp_user, smtp_pass, default_recipient,
-    admin_like_user_id,
+    admin_like_user_id, admin_nav_order,
   } = body;
   if (site_name !== undefined) await setSetting(c.env.DB, 'site_name', String(site_name));
   if (site_name_en !== undefined) await setSetting(c.env.DB, 'site_name_en', String(site_name_en));
@@ -194,11 +189,6 @@ admin.put('/settings', async (c) => {
   if (hero_label_en !== undefined) await setSetting(c.env.DB, 'hero_label_en', String(hero_label_en));
   if (hero_title !== undefined) await setSetting(c.env.DB, 'hero_title', String(hero_title));
   if (hero_title_en !== undefined) await setSetting(c.env.DB, 'hero_title_en', String(hero_title_en));
-  if (smtp_host !== undefined) await setSetting(c.env.DB, 'smtp_host', String(smtp_host));
-  if (smtp_port !== undefined) await setSetting(c.env.DB, 'smtp_port', String(smtp_port));
-  if (smtp_user !== undefined) await setSetting(c.env.DB, 'smtp_user', String(smtp_user));
-  if (smtp_pass !== undefined) await setSetting(c.env.DB, 'smtp_pass', String(smtp_pass));
-  if (default_recipient !== undefined) await setSetting(c.env.DB, 'default_recipient', String(default_recipient));
   if (admin_like_user_id !== undefined) {
     // 点赞归属用户：空串清除；否则必须是已存在的注册用户
     const v = String(admin_like_user_id).trim();
@@ -212,6 +202,19 @@ admin.put('/settings', async (c) => {
       if (!u) return c.json({ detail: '归属用户不存在' }, 400);
       await setSetting(c.env.DB, 'admin_like_user_id', String(n));
     }
+  }
+  if (admin_nav_order !== undefined) {
+    // 菜单顺序:空串清除;否则必须是 JSON 字符串数组
+    const v = String(admin_nav_order).trim();
+    if (v !== '') {
+      try {
+        const parsed = JSON.parse(v);
+        if (!Array.isArray(parsed) || !parsed.every((k) => typeof k === 'string')) throw new Error();
+      } catch {
+        return c.json({ detail: '菜单顺序格式非法' }, 400);
+      }
+    }
+    await setSetting(c.env.DB, 'admin_nav_order', v);
   }
   if (passcode !== undefined) {
     await setSetting(c.env.DB, 'site_passcode_hash',
