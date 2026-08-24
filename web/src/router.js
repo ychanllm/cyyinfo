@@ -37,7 +37,6 @@ const routes = [
       { path: 'music', name: 'admin-music', component: () => import('./views/admin/MusicView.vue') },
       { path: 'dishes', name: 'admin-dishes', component: () => import('./views/admin/DishesView.vue') },
       { path: 'stores', name: 'admin-stores', component: () => import('./views/admin/StoresView.vue') },
-      { path: 'reminders', name: 'admin-reminders', component: () => import('./views/admin/RemindersView.vue') },
       { path: 'messages', name: 'admin-messages', component: () => import('./views/admin/MessagesView.vue') },
       { path: 'users', name: 'admin-users', component: () => import('./views/admin/UsersView.vue') },
       { path: 'settings', name: 'admin-settings', component: () => import('./views/admin/SettingsView.vue') },

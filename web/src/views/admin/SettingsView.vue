@@ -14,12 +14,6 @@ const heroLabel = ref('');
 const heroLabelEn = ref('');
 const heroTitle = ref('');
 const heroTitleEn = ref('');
-const smtpHost = ref('smtp.qq.com');
-const smtpPort = ref('465');
-const smtpUser = ref('');
-const smtpPass = ref('');
-const smtpConfigured = ref(false);
-const defaultRecipient = ref('');
 const checkinBase = ref('10');
 const checkinBonus = ref('5');
 const checkinMax = ref('40');
@@ -47,12 +41,6 @@ async function loadSettings() {
     heroLabelEn.value = data.hero_label_en || '';
     heroTitle.value = data.hero_title || '';
     heroTitleEn.value = data.hero_title_en || '';
-    smtpHost.value = data.smtp_host || 'smtp.qq.com';
-    smtpPort.value = data.smtp_port || '465';
-    smtpUser.value = data.smtp_user || '';
-    smtpPass.value = '';
-    smtpConfigured.value = Boolean(data.smtp_configured);
-    defaultRecipient.value = data.default_recipient || '';
     adminLikeUserId.value = data.admin_like_user_id || '';
     siteUsers.value = await api('/admin/site-users', { admin: true });
     const ck = await api('/admin/checkin-settings', { admin: true });
@@ -87,30 +75,6 @@ async function saveBasic() {
       },
     });
     success.value = t('adminSettings.saved');
-  } catch (e) {
-    error.value = e.message;
-  } finally {
-    saving.value = false;
-  }
-}
-
-async function saveSmtp() {
-  saving.value = true;
-  error.value = '';
-  success.value = '';
-  try {
-    await api('/admin/settings', {
-      method: 'PUT',
-      admin: true,
-      body: {
-        smtp_host: smtpHost.value.trim(),
-        smtp_port: smtpPort.value.trim() || '587',
-        smtp_user: smtpUser.value.trim(),
-        default_recipient: defaultRecipient.value.trim(),
-        ...(smtpPass.value.trim() ? { smtp_pass: smtpPass.value.trim() } : {}),
-      },
-    });
-    success.value = t('adminSettings.smtpSaved');
   } catch (e) {
     error.value = e.message;
   } finally {
@@ -286,34 +250,6 @@ onMounted(loadSettings);
               {{ t('adminSettings.clearPasscode') }}
             </button>
           </div>
-        </form>
-      </section>
-
-      <section class="card">
-        <h3>{{ t('adminSettings.smtp') }}</h3>
-        <p class="status">{{ t('adminSettings.smtpHint') }}</p>
-        <form class="form" @submit.prevent="saveSmtp">
-          <label class="field">
-            {{ t('adminSettings.smtpHost') }}
-            <input v-model="smtpHost" type="text" placeholder="smtp.qq.com" />
-          </label>
-          <label class="field">
-            {{ t('adminSettings.smtpPort') }}
-            <input v-model="smtpPort" type="text" placeholder="465" />
-          </label>
-          <label class="field">
-            {{ t('adminSettings.smtpUser') }}
-            <input v-model="smtpUser" type="email" placeholder="xxx@qq.com" />
-          </label>
-          <label class="field">
-            {{ t('adminSettings.smtpPass') }}
-            <input v-model="smtpPass" type="password" :placeholder="t('adminSettings.smtpPassPh')" autocomplete="new-password" />
-          </label>
-          <label class="field">
-            {{ t('adminSettings.defaultRecipient') }}
-            <input v-model="defaultRecipient" type="email" placeholder="xxx@qq.com" />
-          </label>
-          <button type="submit" class="submit-btn" :disabled="saving">{{ saving ? t('adminSettings.saving') : t('adminSettings.save') }}</button>
         </form>
       </section>
 
