@@ -19,8 +19,9 @@ describe('访客口令', () => {
   });
 
   it('设置口令后公开接口返回 401，验证口令后可访问', async () => {
-    await env.DB.prepare('UPDATE settings SET value = ? WHERE key = ?')
-      .bind(bcrypt.hashSync('iloveu', 10), 'site_passcode_hash').run();
+    await env.DB.prepare(
+      'INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value'
+    ).bind('site_passcode_hash', bcrypt.hashSync('iloveu', 10)).run();
 
     const blocked = await SELF.fetch('http://x/api/albums');
     expect(blocked.status).toBe(401);
@@ -44,7 +45,8 @@ describe('访客口令', () => {
     expect(authed.status).toBe(200);
 
     // 还原，避免影响其他用例
-    await env.DB.prepare('UPDATE settings SET value = ? WHERE key = ?')
-      .bind('', 'site_passcode_hash').run();
+    await env.DB.prepare(
+      'INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value'
+    ).bind('site_passcode_hash', '').run();
   });
 });
