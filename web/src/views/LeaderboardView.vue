@@ -2,7 +2,7 @@
 import { ref, computed, onMounted } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { api } from '../api';
-import { i18n, localize } from '../i18n';
+import { localize } from '../i18n';
 import Lightbox from '../components/Lightbox.vue';
 
 defineOptions({ name: 'LeaderboardView' });
@@ -11,10 +11,9 @@ const { t } = useI18n();
 const board = ref(null);
 const loading = ref(true);
 
-const isEn = computed(() => i18n.global.locale.value === 'en');
-// 后端返回中英两版字段，前端按当前语言挑选（英文为空回退中文）
-const pickTitle = (item) => (isEn.value && item.title_en ? item.title_en : item.title);
-const pickCaption = (p) => (isEn.value && p.caption_en ? p.caption_en : p.caption) || p.filename;
+// 后端返回中英两版字段，站点锁定中文，只取中文字段
+const pickTitle = (item) => item.title;
+const pickCaption = (p) => p.caption || p.filename;
 
 const medals = ['🥇', '🥈', '🥉'];
 const rankLabel = (i) => medals[i] || String(i + 1);

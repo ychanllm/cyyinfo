@@ -29,10 +29,10 @@ async function request(path, { method = 'GET', body, admin = false, form = null 
     headers['Content-Type'] = 'application/json';
     payload = JSON.stringify(body);
   }
-  // 公开内容接口按当前语言取本地化内容（后台接口返回中英两版，无需 lang）
+  // 公开内容接口按站点语言（锁定中文）取本地化内容（后台接口返回中英两版，无需 lang）
   let url = path;
   if (!admin && method === 'GET') {
-    url += (url.includes('?') ? '&' : '?') + 'lang=' + encodeURIComponent(i18n.global.locale.value);
+    url += (url.includes('?') ? '&' : '?') + 'lang=zh';
   }
   const res = await fetch(url, { method, headers, body: payload });
   const data = await res.json().catch(() => ({}));
@@ -41,24 +41,23 @@ async function request(path, { method = 'GET', body, admin = false, form = null 
       // 登录接口 401 = 账号或密码错误：留在登录页提示，不跳转到门禁页
       throw new Error(data.detail || i18n.global.t('api.badCredentials'));
     }
-    const loc = i18n.global.locale.value;
     // 按本次请求实际发送的 token 分流：发了管理员 token 才按管理员会话失效处理，
     // 否则按用户/访客处理（浏览器里有管理员 token 不代表这次请求用的是它）
     if (admin || (!userToken && adminToken)) {
       // 管理员会话失效：清管理员 token，回管理员登录页（已登录管理员不应被抛到访客门禁页）
       clearAdminToken();
-      if (!location.pathname.startsWith(`/${loc}/admin/login`)) location.href = `/${loc}/admin/login`;
+      if (!location.pathname.startsWith('/admin/login')) location.href = '/admin/login';
     } else {
       // 访客/用户会话失效：清 token；登录用户回登录页（带上回跳地址），纯访客回门禁页
       const hadUserToken = Boolean(getUserToken());
       clearGuestToken();
       clearUserToken();
       if (hadUserToken) {
-        if (!location.pathname.startsWith(`/${loc}/login`)) {
-          location.href = `/${loc}/login?redirect=${encodeURIComponent(location.pathname)}`;
+        if (!location.pathname.startsWith('/login')) {
+          location.href = `/login?redirect=${encodeURIComponent(location.pathname)}`;
         }
-      } else if (!location.pathname.startsWith(`/${loc}/gate`)) {
-        location.href = `/${loc}/gate`;
+      } else if (!location.pathname.startsWith('/gate')) {
+        location.href = '/gate';
       }
     }
     throw new Error(data.detail || i18n.global.t('api.unauthorized'));

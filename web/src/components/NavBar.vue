@@ -3,9 +3,8 @@ import { ref, computed, watch, onMounted } from 'vue';
 import { useRoute } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { api, getUserToken } from '../api';
-import { i18n, localize } from '../i18n';
+import { localize } from '../i18n';
 import { me, loadMe } from '../me';
-import LangSwitch from './LangSwitch.vue';
 
 const { t } = useI18n();
 const route = useRoute();
@@ -21,8 +20,6 @@ async function loadStatus() {
 }
 
 onMounted(loadStatus);
-// NavBar 在 router-view 外，切语言时需重新拉本地化的站点名
-watch(() => i18n.global.locale.value, loadStatus);
 
 onMounted(loadMe);
 // NavBar 不随登录页重挂载：路由变化时同步登录状态——刚登录后补拉 /auth/me，token 失效后清空头像
@@ -69,7 +66,6 @@ const links = computed(() => [
             {{ l.icon }}
           </router-link>
         </nav>
-        <LangSwitch />
       </div>
     </div>
   </header>

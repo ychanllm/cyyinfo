@@ -3,7 +3,7 @@ import { ref, onMounted } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { api } from '../../api';
 
-const { t, locale } = useI18n();
+const { t } = useI18n();
 const users = ref([]);
 const loading = ref(true);
 const error = ref('');
@@ -159,7 +159,7 @@ const TX_TYPE_KEYS = {
 function txReason(tx) {
   const base = t(`adminUsers.${TX_TYPE_KEYS[tx.type] ?? 'typeOther'}`);
   if (tx.type === 'checkin') return base;
-  const prize = locale.value === 'en' ? (tx.prize_name_en || tx.prize_name) : tx.prize_name;
+  const prize = tx.prize_name;
   return prize ? `${base}：${prize}` : base;
 }
 

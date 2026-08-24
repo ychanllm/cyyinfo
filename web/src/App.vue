@@ -24,14 +24,14 @@ onMounted(async () => {
 </script>
 
 <template>
-  <router-view v-if="isAdmin" :key="$route.params.lang" />
+  <router-view v-if="isAdmin" />
   <template v-else>
     <NavBar />
     <main class="page">
-      <!-- keep-alive 只缓存三个列表页；:key 保留，切语言仍强制重渲染 -->
+      <!-- keep-alive 只缓存三个列表页 -->
       <router-view v-slot="{ Component }">
         <keep-alive :include="['AlbumsView', 'DiariesView', 'LeaderboardView']">
-          <component :is="Component" :key="$route.params.lang" />
+          <component :is="Component" />
         </keep-alive>
       </router-view>
     </main>

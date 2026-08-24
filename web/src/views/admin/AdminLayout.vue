@@ -4,7 +4,6 @@ import { useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { clearAdminToken } from '../../api';
 import { localize } from '../../i18n';
-import LangSwitch from '../../components/LangSwitch.vue';
 import MiniPlayer from '../../components/MiniPlayer.vue';
 
 const { t } = useI18n();
@@ -36,7 +35,6 @@ function logout() {
     <aside class="sidebar">
       <div class="side-head">
         <h1 class="brand">{{ t('admin.brand') }}</h1>
-        <LangSwitch />
       </div>
       <nav class="nav">
         <router-link
@@ -52,7 +50,7 @@ function logout() {
       <button class="logout" @click="logout">{{ t('admin.logout') }}</button>
     </aside>
     <main class="content">
-      <router-view :key="$route.params.lang" />
+      <router-view />
     </main>
     <MiniPlayer />
   </div>

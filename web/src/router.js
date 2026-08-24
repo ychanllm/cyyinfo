@@ -1,34 +1,32 @@
 import { createRouter, createWebHistory } from 'vue-router';
 import { api, getGuestToken, getAdminToken, getUserToken } from './api';
-import { i18n, DEFAULT_LOCALE, LOCALES } from './i18n';
+import { i18n } from './i18n';
 
 const routes = [
-  // 裸根路径：跳到默认语言
-  { path: '/', redirect: () => `/${DEFAULT_LOCALE}` },
-  { path: '/:lang/gate', name: 'gate', component: () => import('./views/GateView.vue'), meta: { public: true } },
-  { path: '/:lang/login', name: 'login', component: () => import('./views/UserLoginView.vue'), meta: { public: true } },
-  { path: '/:lang', name: 'home', component: () => import('./views/HomeView.vue') },
-  { path: '/:lang/albums', name: 'albums', component: () => import('./views/AlbumsView.vue') },
-  { path: '/:lang/albums/:id', name: 'album-detail', component: () => import('./views/AlbumDetailView.vue') },
-  { path: '/:lang/diaries', name: 'diaries', component: () => import('./views/DiariesView.vue') },
-  { path: '/:lang/diaries/:slugOrId', name: 'diary-detail', component: () => import('./views/DiaryDetailView.vue') },
-  { path: '/:lang/leaderboard', name: 'leaderboard', component: () => import('./views/LeaderboardView.vue') },
-  { path: '/:lang/music', name: 'music', component: () => import('./views/MusicView.vue') },
-  { path: '/:lang/music/:id', name: 'music-album', component: () => import('./views/MusicAlbumView.vue') },
-  { path: '/:lang/points', name: 'points', component: () => import('./views/PointsView.vue'), meta: { user: true } },
-  { path: '/:lang/dishes', name: 'dishes', component: () => import('./views/DishesView.vue') },
+  { path: '/', name: 'home', component: () => import('./views/HomeView.vue') },
+  { path: '/gate', name: 'gate', component: () => import('./views/GateView.vue'), meta: { public: true } },
+  { path: '/login', name: 'login', component: () => import('./views/UserLoginView.vue'), meta: { public: true } },
+  { path: '/albums', name: 'albums', component: () => import('./views/AlbumsView.vue') },
+  { path: '/albums/:id', name: 'album-detail', component: () => import('./views/AlbumDetailView.vue') },
+  { path: '/diaries', name: 'diaries', component: () => import('./views/DiariesView.vue') },
+  { path: '/diaries/:slugOrId', name: 'diary-detail', component: () => import('./views/DiaryDetailView.vue') },
+  { path: '/leaderboard', name: 'leaderboard', component: () => import('./views/LeaderboardView.vue') },
+  { path: '/music', name: 'music', component: () => import('./views/MusicView.vue') },
+  { path: '/music/:id', name: 'music-album', component: () => import('./views/MusicAlbumView.vue') },
+  { path: '/points', name: 'points', component: () => import('./views/PointsView.vue'), meta: { user: true } },
+  { path: '/dishes', name: 'dishes', component: () => import('./views/DishesView.vue') },
   {
-    path: '/:lang/admin/login',
+    path: '/admin/login',
     name: 'admin-login',
     component: () => import('./views/admin/LoginView.vue'),
     meta: { public: true, admin: true },
   },
   {
-    path: '/:lang/admin',
+    path: '/admin',
     component: () => import('./views/admin/AdminLayout.vue'),
     meta: { admin: true },
     children: [
-      { path: '', redirect: (to) => `/${to.params.lang}/admin/photos` },
+      { path: '', redirect: '/admin/photos' },
       { path: 'stats', name: 'admin-stats', component: () => import('./views/admin/StatsView.vue') },
       { path: 'photos', name: 'admin-photos', component: () => import('./views/admin/PhotosView.vue') },
       { path: 'diaries', name: 'admin-diaries', component: () => import('./views/admin/DiariesView.vue') },
@@ -45,7 +43,15 @@ const routes = [
       { path: 'changelog', name: 'admin-changelog', component: () => import('./views/admin/ChangelogView.vue') },
     ],
   },
-  // 未知路径兜底：经由裸根路径跳默认语言
+  // 旧链接兼容：/zh/* 与 /en/* 重定向到无前缀路径（保留 path 剩余部分和 query）
+  {
+    path: '/:lang(zh|en)/:pathMatch(.*)*',
+    redirect: (to) => {
+      const rest = [].concat(to.params.pathMatch).join('/');
+      return { path: '/' + rest, query: to.query };
+    },
+  },
+  // 未知路径兜底：回首页
   { path: '/:pathMatch(.*)*', redirect: '/' },
 ];
 
@@ -67,27 +73,17 @@ export const router = createRouter({
 let passcodeEnabled = null; // 缓存 site/status
 
 router.beforeEach(async (to) => {
-  const lang = to.params.lang;
-  if (!lang) {
-    const rest = to.path === '/' ? '' : to.path;
-    return { path: `/${DEFAULT_LOCALE}${rest}` };
-  }
-  if (!LOCALES.includes(lang)) {
-    const rest = to.path.replace(new RegExp(`^/${lang}`), '');
-    return { path: `/${DEFAULT_LOCALE}${rest}` };
-  }
-  i18n.global.locale.value = lang;
-  document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en';
+  document.documentElement.lang = 'zh-CN';
   document.title = i18n.global.t('site.title');
 
   if (to.meta.public) return true;
   // 积分/签到页需要用户登录
   if (to.meta.user && !getUserToken()) {
-    return { name: 'login', params: { lang }, query: { redirect: to.fullPath } };
+    return { name: 'login', query: { redirect: to.fullPath } };
   }
   // 后台守卫
   if (to.meta.admin) {
-    return getAdminToken() ? true : { name: 'admin-login', params: { lang }, query: { redirect: to.fullPath } };
+    return getAdminToken() ? true : { name: 'admin-login', query: { redirect: to.fullPath } };
   }
   // 访客口令守卫：已登录管理员可免口令浏览公开页
   if (passcodeEnabled === null) {
@@ -97,7 +93,7 @@ router.beforeEach(async (to) => {
     } catch { passcodeEnabled = false; }
   }
   if (passcodeEnabled && !getGuestToken() && !getAdminToken() && !getUserToken()) {
-    return { name: 'gate', params: { lang }, query: { redirect: to.fullPath } };
+    return { name: 'gate', query: { redirect: to.fullPath } };
   }
   return true;
 });

@@ -1,6 +1,5 @@
 <script setup>
 import { onMounted, onUnmounted, reactive, ref, watch } from 'vue';
-import { i18n } from '../i18n';
 import { state as playerState } from '../player';
 
 const wrap = ref(null);
@@ -65,11 +64,8 @@ function onClick() {
   pet.play(pool[Math.floor(Math.random() * pool.length)]);
 }
 
-// 按当前语言加载皮肤（en 用英文版）
 function skinUrl() {
-  return i18n.global.locale.value === 'en'
-    ? '/pet/skins/default/skin.en.json'
-    : '/pet/skins/default/skin.json';
+  return '/pet/skins/default/skin.json';
 }
 
 async function mountPet() {
@@ -95,12 +91,6 @@ watch(() => playerState.queue.length, (len) => {
   const limit = window.innerHeight - rect.height - bottomMargin();
   if (len && pos.y > limit) pos.y = limit;
   if (!len) pos.y = limit;
-});
-
-// 切换语言时用对应语言的皮肤重建桌宠
-watch(() => i18n.global.locale.value, () => {
-  if (bubble.value) bubble.value.style.opacity = '0';
-  mountPet();
 });
 
 onUnmounted(() => {

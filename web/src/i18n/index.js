@@ -1,32 +1,16 @@
 import { createI18n } from 'vue-i18n';
 import zh from './zh.js';
-import en from './en.js';
 
-export const DEFAULT_LOCALE = 'en';
-export const LOCALES = ['zh', 'en'];
-
+// 站点锁定中文，不做浏览器语言探测/切换
 export const i18n = createI18n({
   legacy: false,
   globalInjection: true,
-  locale: DEFAULT_LOCALE,
+  locale: 'zh',
   fallbackLocale: 'zh',
-  messages: { zh, en },
+  messages: { zh },
 });
 
-// 给内部路径加当前语言前缀；已带语言前缀时幂等。
-// 例：localize('/albums') -> '/en/albums'；localize('/en/albums') -> '/en/albums'
+// 恒等函数：路径不再带语言前缀。保留导出，视图中的 localize(...) 调用无需改动。
 export function localize(path = '/') {
-  const lang = i18n.global.locale.value || DEFAULT_LOCALE;
-  const [pathname = '', query = ''] = String(path).split('?');
-  const qs = query ? '?' + query : '';
-  if (pathname === '') return '/' + lang + qs;
-  const first = pathname.split('/')[1];
-  if (first === lang) return pathname + qs;
-  if (LOCALES.includes(first)) {
-    const rest = pathname.slice(first.length + 1);
-    const joined = '/' + lang + (rest === '' ? '' : '/' + rest);
-    return joined + qs;
-  }
-  const joined = pathname === '/' ? `/${lang}` : `/${lang}${pathname}`;
-  return joined + qs;
+  return path;
 }
