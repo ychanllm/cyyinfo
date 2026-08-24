@@ -227,6 +227,7 @@ export default {
   admin: {
     brand: '管理后台',
     stats: '统计',
+    media: '素材',
     photos: '照片',
     diaries: '日记',
     music: '音乐',
