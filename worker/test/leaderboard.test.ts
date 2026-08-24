@@ -7,6 +7,7 @@ let user: { id: number; token: string };
 let albumA = 0; let albumB = 0; let albumIdle = 0;
 let photoA = 0; let photoB = 0;
 let diary1 = 0; let diary2 = 0; let diaryDraft = 0;
+let msg1 = 0; let msg2 = 0;
 
 const postView = (target_type: string, target_id: unknown) =>
   SELF.fetch('http://x/api/views', {
@@ -67,6 +68,18 @@ beforeAll(async () => {
   await toggleLike('album', albumB);
   await toggleLike('photo', photoB);
   await toggleLike('diary', diary1);
+
+  // 日记二下造一条留言和一条楼中楼回复,各 1 赞:合并后日记二 likes=2、score=2*5+1=11,超过日记一(8)
+  const m1 = await env.DB.prepare(
+    "INSERT INTO messages (nickname, content, target_type, target_id, is_approved) VALUES ('榜测留言', 'x', 'diary', ?, 1)"
+  ).bind(diary2).run();
+  msg1 = Number(m1.meta.last_row_id);
+  const m2 = await env.DB.prepare(
+    "INSERT INTO messages (nickname, content, target_type, target_id, parent_id, is_approved) VALUES ('榜测回复', 'x', 'diary', ?, ?, 1)"
+  ).bind(diary2, msg1).run();
+  msg2 = Number(m2.meta.last_row_id);
+  await toggleLike('message', msg1);
+  await toggleLike('message', msg2);
 });
 
 // 测试共享同一 D1：清理本文件的造数，避免影响其它文件的公开列表计数断言
@@ -83,6 +96,8 @@ afterAll(async () => {
     await env.DB.prepare('DELETE FROM view_counts WHERE target_type = ? AND target_id = ?').bind(type, id).run();
     await env.DB.prepare('DELETE FROM likes WHERE target_type = ? AND target_id = ?').bind(type, id).run();
   }
+  await env.DB.prepare(`DELETE FROM messages WHERE id IN (${msg1}, ${msg2})`).run();
+  await env.DB.prepare("DELETE FROM likes WHERE target_type = 'message' AND target_id IN (?, ?)").bind(msg1, msg2).run();
 });
 
 describe('浏览量上报', () => {
@@ -149,14 +164,20 @@ describe('排行榜', () => {
     expect(pa.caption_en).toBe('LB Photo A');
   });
 
-  it('日记榜：只含已发布日记，草稿不上榜', async () => {
-    const board = (await (await SELF.fetch('http://x/api/leaderboard')).json()) as any;
+  it('日记榜：留言(含回复)的赞合并进日记点赞，草稿不上榜', async () => {
+    const board = await (await SELF.fetch('http://x/api/leaderboard')).json() as any;
     const diaries = board.diaries.filter((x: any) => [diary1, diary2, diaryDraft].includes(x.id));
-    expect(diaries.map((x: any) => x.id)).toEqual([diary1, diary2]); // 8 vs 1
-    expect(diaries[0].slug).toBe('lb-diary-1');
-    expect(diaries[0].views).toBe(3);
-    expect(diaries[0].likes).toBe(1);
-    expect(diaries[0].score).toBe(8);
+    // 日记二:0 自身赞 + 2 留言赞 + 1 浏览 = score 11;日记一:1 赞 + 3 浏览 = score 8
+    expect(diaries.map((x: any) => x.id)).toEqual([diary2, diary1]);
+    const d2 = diaries[0];
+    expect(d2.likes).toBe(2);
+    expect(d2.views).toBe(1);
+    expect(d2.score).toBe(11);
+    const d1 = diaries[1];
+    expect(d1.slug).toBe('lb-diary-1');
+    expect(d1.views).toBe(3);
+    expect(d1.likes).toBe(1);
+    expect(d1.score).toBe(8);
     expect(board.diaries.some((x: any) => x.id === diaryDraft)).toBe(false);
   });
 

@@ -348,13 +348,22 @@ content.get('/leaderboard', async (c) => {
      WHERE t.hidden = 0 AND COALESCE(v.views, 0) + COALESCE(l.likes, 0) > 0
      ORDER BY score DESC, t.id ASC LIMIT 10`
   ).bind('photo', 'photo').all();
-  // 日记榜只算已发布的；带 slug 供前端跳转
+  // 日记榜只算已发布的；点赞合并该日记下留言(含楼中楼回复)的赞；带 slug 供前端跳转
   const { results: diaries } = await db.prepare(
     `SELECT t.id, t.title, t.title_en, t.slug,
-            COALESCE(v.views, 0) AS views, COALESCE(l.likes, 0) AS likes,
-            COALESCE(l.likes, 0) * 5 + COALESCE(v.views, 0) AS score
+            COALESCE(v.views, 0) AS views,
+            COALESCE(l.likes, 0) + COALESCE(ml.msg_likes, 0) AS likes,
+            (COALESCE(l.likes, 0) + COALESCE(ml.msg_likes, 0)) * 5 + COALESCE(v.views, 0) AS score
      FROM diaries t ${LEADERBOARD_STATS}
-     WHERE t.status = 'published' AND COALESCE(v.views, 0) + COALESCE(l.likes, 0) > 0
+     LEFT JOIN (
+       SELECT m.target_id AS diary_id, COALESCE(SUM(l2.count), 0) AS msg_likes
+       FROM messages m
+       JOIN likes l2 ON l2.target_type = 'message' AND l2.target_id = m.id
+       WHERE m.target_type = 'diary'
+       GROUP BY m.target_id
+     ) ml ON ml.diary_id = t.id
+     WHERE t.status = 'published'
+       AND COALESCE(v.views, 0) + COALESCE(l.likes, 0) + COALESCE(ml.msg_likes, 0) > 0
      ORDER BY score DESC, t.id ASC LIMIT 10`
   ).bind('diary', 'diary').all();
   return c.json({ albums, photos, diaries });
