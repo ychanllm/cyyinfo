@@ -148,9 +148,9 @@ watch(() => route.params.id, load);
         </div>
 
         <div class="controls">
-          <button class="nav" :disabled="activeIndex <= 0" @click="goTo(-1)" :aria-label="t('albumDetail.prev')">&#8249;</button>
+          <button class="nav" :disabled="activeIndex <= 0" @click="goTo(-1)" :aria-label="t('albumDetail.prev')">&#10094;</button>
           <span class="counter font-hand">{{ activeIndex + 1 }} / {{ album.photos.length }}</span>
-          <button class="nav" :disabled="activeIndex >= album.photos.length - 1" @click="goTo(1)" :aria-label="t('albumDetail.next')">&#8250;</button>
+          <button class="nav" :disabled="activeIndex >= album.photos.length - 1" @click="goTo(1)" :aria-label="t('albumDetail.next')">&#10095;</button>
         </div>
       </template>
 
@@ -255,6 +255,7 @@ watch(() => route.params.id, load);
 .counter {
   color: var(--color-text-light);
   font-size: 22px;
+  line-height: 40px; /* 与 .nav 按钮同高， Caveat 高行盒不再把计数器顶偏 */
   min-width: 80px;
   text-align: center;
 }

@@ -28,7 +28,12 @@ onMounted(async () => {
   <template v-else>
     <NavBar />
     <main class="page">
-      <router-view :key="$route.params.lang" />
+      <!-- keep-alive 只缓存三个列表页；:key 保留，切语言仍强制重渲染 -->
+      <router-view v-slot="{ Component }">
+        <keep-alive :include="['AlbumsView', 'DiariesView', 'LeaderboardView']">
+          <component :is="Component" :key="$route.params.lang" />
+        </keep-alive>
+      </router-view>
     </main>
     <DesktopPet />
     <MiniPlayer />

@@ -1,5 +1,7 @@
 <script setup>
 import { ref, onMounted } from 'vue';
+
+defineOptions({ name: 'AlbumsView' });
 import { useI18n } from 'vue-i18n';
 import { api } from '../api';
 import { localize } from '../i18n';

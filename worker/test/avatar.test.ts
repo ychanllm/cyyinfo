@@ -35,7 +35,7 @@ describe('用户头像', () => {
     expect(img.status).toBe(200);
   });
 
-  it('拒绝非图片和超过 2MB 的文件', async () => {
+  it('拒绝非图片和超过 5MB 的文件', async () => {
     const { token } = await registerUser('avatar_user2');
     const auth = { Authorization: `Bearer ${token}` };
 
@@ -47,7 +47,7 @@ describe('用户头像', () => {
 
     const tooBig = await SELF.fetch('http://x/api/users/me/avatar', {
       method: 'POST', headers: auth,
-      body: uploadForm(new File([new Uint8Array(2 * 1024 * 1024 + 1)], 'big.png', { type: 'image/png' })),
+      body: uploadForm(new File([new Uint8Array(5 * 1024 * 1024 + 1)], 'big.png', { type: 'image/png' })),
     });
     expect(tooBig.status).toBe(400);
   });

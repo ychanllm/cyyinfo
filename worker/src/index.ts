@@ -8,6 +8,7 @@ import pointsRoutes from './routes/points';
 import likesRoutes from './routes/likes';
 import adminPrizesRoutes from './routes/adminPrizes';
 import storageRoutes from './routes/storage';
+import dishesRoutes, { adminDishes } from './routes/dishes';
 
 // Hono 实例自带 fetch 方法：Worker（wrangler deploy / miniflare 测试）用 export default，
 // Pages Functions 用 hono/cloudflare-pages 的 handle(app)，两种部署形态共用同一份代码
@@ -41,6 +42,8 @@ app.route('/api', publicRoutes);
 app.route('/api', usersRoutes);
 app.route('/api', pointsRoutes);
 app.route('/api/likes', likesRoutes);
+app.route('/api/dishes', dishesRoutes);
+app.route('/api/admin/dishes', adminDishes);
 app.route('/uploads', storageRoutes);
 
 export default app;

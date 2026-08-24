@@ -16,6 +16,7 @@ const routes = [
   { path: '/:lang/music', name: 'music', component: () => import('./views/MusicView.vue') },
   { path: '/:lang/music/:id', name: 'music-album', component: () => import('./views/MusicAlbumView.vue') },
   { path: '/:lang/points', name: 'points', component: () => import('./views/PointsView.vue'), meta: { user: true } },
+  { path: '/:lang/dishes', name: 'dishes', component: () => import('./views/DishesView.vue') },
   {
     path: '/:lang/admin/login',
     name: 'admin-login',
@@ -34,6 +35,7 @@ const routes = [
       { path: 'diaries/new', name: 'admin-diary-new', component: () => import('./views/admin/DiaryEditView.vue') },
       { path: 'diaries/:id/edit', name: 'admin-diary-edit', component: () => import('./views/admin/DiaryEditView.vue') },
       { path: 'music', name: 'admin-music', component: () => import('./views/admin/MusicView.vue') },
+      { path: 'dishes', name: 'admin-dishes', component: () => import('./views/admin/DishesView.vue') },
       { path: 'reminders', name: 'admin-reminders', component: () => import('./views/admin/RemindersView.vue') },
       { path: 'messages', name: 'admin-messages', component: () => import('./views/admin/MessagesView.vue') },
       { path: 'users', name: 'admin-users', component: () => import('./views/admin/UsersView.vue') },
@@ -47,7 +49,20 @@ const routes = [
   { path: '/:pathMatch(.*)*', redirect: '/' },
 ];
 
-export const router = createRouter({ history: createWebHistory(), routes });
+// 记录各路径离开时的滚动位置：详情页内「返回」是 push 导航（无 savedPosition），
+// 浏览器前进/后退则直接用 savedPosition
+const scrollPositions = new Map();
+
+export const router = createRouter({
+  history: createWebHistory(),
+  routes,
+  scrollBehavior(to, from, savedPosition) {
+    scrollPositions.set(from.fullPath, window.scrollY);
+    if (savedPosition) return savedPosition;
+    const y = scrollPositions.get(to.fullPath);
+    return y ? { top: y } : { top: 0 };
+  },
+});
 
 let passcodeEnabled = null; // 缓存 site/status
 

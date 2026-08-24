@@ -69,8 +69,8 @@ users.get('/auth/me', userAuth, async (c) => {
   return c.json(row);
 });
 
-// 头像上传：仅图片且 ≤ 2MB，旧头像文件随之删除
-const MAX_AVATAR = 2 * 1024 * 1024;
+// 头像上传：仅图片且 ≤ 5MB，旧头像文件随之删除
+const MAX_AVATAR = 5 * 1024 * 1024;
 users.post('/users/me/avatar', userAuth, async (c) => {
   const me = c.get('user') as { id: number };
   const body = await c.req.parseBody();

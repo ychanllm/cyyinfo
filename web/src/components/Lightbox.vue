@@ -52,7 +52,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown));
 <template>
   <div v-if="current" class="lightbox" @click.self="close">
     <button class="close" :aria-label="t('lightbox.close')" @click="close">&times;</button>
-    <button v-if="photos.length > 1" class="arrow left" :aria-label="t('lightbox.prev')" @click="prev">&#8249;</button>
+    <button v-if="photos.length > 1" class="arrow left" :aria-label="t('lightbox.prev')" @click="prev">&#10094;</button>
     <figure class="stage">
       <img :src="`/uploads/${current.filename}`" :alt="current.caption || ''" class="img" />
       <figcaption v-if="current.caption" class="caption">{{ current.caption }}</figcaption>
@@ -71,7 +71,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown));
         :to="albumLink(current)"
       >{{ t('lightbox.viewInAlbum') }}</router-link>
     </figure>
-    <button v-if="photos.length > 1" class="arrow right" :aria-label="t('lightbox.next')" @click="next">&#8250;</button>
+    <button v-if="photos.length > 1" class="arrow right" :aria-label="t('lightbox.next')" @click="next">&#10095;</button>
   </div>
 </template>
 

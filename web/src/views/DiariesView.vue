@@ -4,6 +4,8 @@ import { useI18n } from 'vue-i18n';
 import { api } from '../api';
 import { localize } from '../i18n';
 import { fmtDateFull } from '../utils/date';
+
+defineOptions({ name: 'DiariesView' });
 import LikeButton from '../components/LikeButton.vue';
 
 const { t } = useI18n();

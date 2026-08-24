@@ -5,6 +5,8 @@ import { api } from '../api';
 import { i18n, localize } from '../i18n';
 import Lightbox from '../components/Lightbox.vue';
 
+defineOptions({ name: 'LeaderboardView' });
+
 const { t } = useI18n();
 const board = ref(null);
 const loading = ref(true);

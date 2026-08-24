@@ -35,12 +35,13 @@ watch(() => route.fullPath, () => {
 });
 
 const links = computed(() => [
-  { to: localize('/'), label: t('nav.home'), exact: true },
-  { to: localize('/albums'), label: t('nav.albums') },
-  { to: localize('/diaries'), label: t('nav.diaries') },
-  { to: localize('/leaderboard'), label: t('nav.ranking') },
-  { to: localize('/music'), label: t('nav.music') },
-  { to: localize('/points'), label: t('nav.points') },
+  { to: localize('/'), label: t('nav.home'), icon: '🏠', exact: true },
+  { to: localize('/albums'), label: t('nav.albums'), icon: '📷' },
+  { to: localize('/diaries'), label: t('nav.diaries'), icon: '📔' },
+  { to: localize('/leaderboard'), label: t('nav.ranking'), icon: '🏆' },
+  { to: localize('/music'), label: t('nav.music'), icon: '🎵' },
+  { to: localize('/points'), label: t('nav.points'), icon: '📅' },
+  { to: localize('/dishes'), label: t('nav.dishes'), icon: '🍲' },
 ]);
 </script>
 
@@ -62,8 +63,10 @@ const links = computed(() => [
             :to="l.to"
             class="link"
             :class="{ active: l.exact ? $route.path === l.to : $route.path.startsWith(l.to) }"
+            :title="l.label"
+            :aria-label="l.label"
           >
-            {{ l.label }}
+            {{ l.icon }}
           </router-link>
         </nav>
         <LangSwitch />
@@ -126,21 +129,51 @@ const links = computed(() => [
 }
 .links {
   display: flex;
-  gap: 4px;
+  gap: 2px;
 }
 .link {
-  padding: 6px 14px;
-  border-radius: 8px;
-  font-size: 15px;
-  color: var(--color-text-light);
+  position: relative;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 19px;
+  line-height: 1;
+  text-decoration: none;
 }
 .link:hover {
-  color: var(--color-primary);
   background: var(--bg-deep);
 }
+/* active：emoji 下方一颗小圆点 */
 .link.active {
-  color: var(--color-primary);
   background: var(--bg-deep);
-  font-weight: 600;
+}
+.link.active::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: 2px;
+  transform: translateX(-50%);
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--color-primary);
+}
+/* 窄屏：缩小间距，给后续新增入口留位 */
+@media (max-width: 480px) {
+  .inner {
+    padding: 0 10px;
+  }
+  .left {
+    gap: 8px;
+  }
+  .brand {
+    font-size: 17px;
+  }
+  .right {
+    gap: 6px;
+  }
+  .link {
+    padding: 6px 6px;
+    font-size: 18px;
+  }
 }
 </style>
