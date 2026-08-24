@@ -618,6 +618,11 @@ export default {
     likeAttributionHint: '管理员在前台点赞时，点赞记到该注册用户头上；留空则管理员不能点赞。',
     likeNone: '（不指定，管理员不能点赞）',
     likeSaved: '点赞设置已保存',
+    navOrder: '菜单排序',
+    navOrderHint: '调整管理后台左侧菜单的排列顺序，保存后立即生效。',
+    moveUp: '上移',
+    moveDown: '下移',
+    navOrderSaved: '菜单顺序已保存',
   },
   adminUsers: {
     title: '账号管理',

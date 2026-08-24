@@ -2,6 +2,7 @@
 import { ref, onMounted } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { api } from '../../api';
+import { DEFAULT_NAV, applyNavOrder, loadNavOrder } from '../../utils/admin-nav';
 
 const { t } = useI18n();
 const siteName = ref('');
@@ -21,6 +22,8 @@ const boxCost = ref('100');
 // 点赞归属用户：管理员在前台点赞时记到该注册用户头上
 const siteUsers = ref([]);
 const adminLikeUserId = ref('');
+// 菜单排序：当前顺序的 key 数组
+const navKeys = ref([]);
 
 const loading = ref(true);
 const saving = ref(false);
@@ -42,6 +45,7 @@ async function loadSettings() {
     heroTitle.value = data.hero_title || '';
     heroTitleEn.value = data.hero_title_en || '';
     adminLikeUserId.value = data.admin_like_user_id || '';
+    navKeys.value = applyNavOrder(data.admin_nav_order ? JSON.parse(data.admin_nav_order) : null).map((i) => i.key);
     siteUsers.value = await api('/admin/site-users', { admin: true });
     const ck = await api('/admin/checkin-settings', { admin: true });
     checkinBase.value = ck.checkin_base_points;
@@ -168,6 +172,33 @@ async function clearPasscode() {
 }
 
 onMounted(loadSettings);
+
+function moveNav(index, dir) {
+  const target = index + dir;
+  if (target < 0 || target >= navKeys.value.length) return;
+  const arr = [...navKeys.value];
+  [arr[index], arr[target]] = [arr[target], arr[index]];
+  navKeys.value = arr;
+}
+
+async function saveNavOrder() {
+  saving.value = true;
+  error.value = '';
+  success.value = '';
+  try {
+    await api('/admin/settings', {
+      method: 'PUT',
+      admin: true,
+      body: { admin_nav_order: JSON.stringify(navKeys.value) },
+    });
+    await loadNavOrder(); // 刷新共享 navOrder，侧边栏立即按新顺序渲染
+    success.value = t('adminSettings.navOrderSaved');
+  } catch (e) {
+    error.value = e.message;
+  } finally {
+    saving.value = false;
+  }
+}
 </script>
 
 <template>
@@ -294,6 +325,27 @@ onMounted(loadSettings);
           </button>
         </form>
       </section>
+
+      <section class="card">
+        <h3>{{ t('adminSettings.navOrder') }}</h3>
+        <p class="status">{{ t('adminSettings.navOrderHint') }}</p>
+        <ul class="nav-order-list">
+          <li v-for="(key, i) in navKeys" :key="key" class="nav-order-item">
+            <span>{{ t(DEFAULT_NAV.find((x) => x.key === key).labelKey) }}</span>
+            <span class="nav-order-actions">
+              <button type="button" class="btn" :disabled="i === 0" @click="moveNav(i, -1)">
+                {{ t('adminSettings.moveUp') }}
+              </button>
+              <button type="button" class="btn" :disabled="i === navKeys.length - 1" @click="moveNav(i, 1)">
+                {{ t('adminSettings.moveDown') }}
+              </button>
+            </span>
+          </li>
+        </ul>
+        <button type="button" class="submit-btn" :disabled="saving" @click="saveNavOrder">
+          {{ saving ? t('adminSettings.saving') : t('adminSettings.save') }}
+        </button>
+      </section>
     </template>
   </div>
 </template>
@@ -416,5 +468,31 @@ onMounted(loadSettings);
 .btn:disabled {
   opacity: 0.6;
   cursor: default;
+}
+.nav-order-list {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.nav-order-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  font-size: 14px;
+}
+.nav-order-actions {
+  display: flex;
+  gap: 6px;
+}
+.nav-order-actions .btn {
+  padding: 4px 10px;
+  font-size: 13px;
 }
 </style>
