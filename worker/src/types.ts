@@ -9,7 +9,6 @@ export interface Env {
   MESSAGE_RATE_LIMITER?: RateLimit;
   ADMIN_USERNAME: string;
   ADMIN_PASSWORD: string;
-  REMINDER_TOKEN: string; // GitHub Actions 定时触发 /api/reminders/check 用的 token
 }
 
 export interface Variables {

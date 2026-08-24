@@ -4,17 +4,9 @@ import type { AppEnv, Env } from '../types';
 import { signJwt } from '../auth';
 import { enforceRateLimit, clientIp } from '../security';
 import { contentGuard, getSetting } from '../guard';
-import { sendEmail } from '../smtp';
 import { logAudit } from '../audit';
 
 const pub = new Hono<AppEnv>();
-
-interface ReminderRow {
-  id: number;
-  title: string;
-  content: string;
-  recipient: string;
-}
 
 // 公开内容按 ?lang= 返回对应语言（默认中文），英文为空时回退中文
 function localized(c: { req: { query: (k: string) => string | undefined } }): 'en' | 'zh' {
@@ -64,64 +56,6 @@ pub.post('/passcode/verify', async (c) => {
   }
   const token = await signJwt(c.env, { role: 'guest' }, 24 * 7);
   return c.json({ token });
-});
-
-// 定时任务触发：查询到点未发送的提醒并发送邮件（用 x-reminder-token 鉴权）
-pub.post('/reminders/check', async (c) => {
-  const token = c.req.header('x-reminder-token');
-  if (!c.env.REMINDER_TOKEN || token !== c.env.REMINDER_TOKEN) {
-    return c.json({ detail: '未授权' }, 401);
-  }
-  // 当前中国时区(UTC+8)时间，与前端 datetime-local 存储的 send_at 对齐
-  const now = new Date(Date.now() + 8 * 3600 * 1000);
-  const p = (n: number) => String(n).padStart(2, '0');
-  const nowStr = `${now.getUTCFullYear()}-${p(now.getUTCMonth() + 1)}-${p(now.getUTCDate())} `
-    + `${p(now.getUTCHours())}:${p(now.getUTCMinutes())}:${p(now.getUTCSeconds())}`;
-
-  const { results: candidates } = await c.env.DB.prepare(
-    `SELECT * FROM reminders
-     WHERE send_at <= ?
-       AND (status = 'pending' OR (status = 'processing' AND updated_at <= datetime('now', '-10 minutes')))
-     ORDER BY send_at LIMIT 50`
-  ).bind(nowStr).all<ReminderRow>();
-
-  const smtp = {
-    host: (await getSetting(c.env.DB, 'smtp_host')) || 'smtp.qq.com',
-    port: Number((await getSetting(c.env.DB, 'smtp_port')) || 465),
-    user: await getSetting(c.env.DB, 'smtp_user'),
-    pass: await getSetting(c.env.DB, 'smtp_pass'),
-    from: await getSetting(c.env.DB, 'smtp_user'),
-  };
-  const defaultRecipient = await getSetting(c.env.DB, 'default_recipient');
-
-  let sent = 0;
-  let checked = 0;
-  for (const r of candidates) {
-    const claim = await c.env.DB.prepare(
-      `UPDATE reminders SET status='processing', error='', updated_at=datetime('now')
-       WHERE id=?
-         AND (status = 'pending' OR (status = 'processing' AND updated_at <= datetime('now', '-10 minutes')))`
-    ).bind(r.id).run();
-    if (!claim.meta.changes) continue;
-    checked++;
-    const to = r.recipient || defaultRecipient;
-    if (!to || !smtp.user || !smtp.pass) {
-      await c.env.DB.prepare("UPDATE reminders SET status='failed', error='SMTP 未配置', updated_at=datetime('now') WHERE id=?")
-        .bind(r.id).run();
-      continue;
-    }
-    try {
-      await sendEmail(smtp, to, `提醒：${r.title}`, r.content || r.title);
-      await c.env.DB.prepare("UPDATE reminders SET status='sent', error='', updated_at=datetime('now') WHERE id=?")
-        .bind(r.id).run();
-      sent++;
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      await c.env.DB.prepare("UPDATE reminders SET status='failed', error=?, updated_at=datetime('now') WHERE id=?")
-        .bind(msg, r.id).run();
-    }
-  }
-  return c.json({ checked, sent, failed: checked - sent });
 });
 
 // 内容接口挂在 contentGuard 之后（后续任务在此追加路由）

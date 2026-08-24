@@ -65,8 +65,6 @@ admin.use('/settings', adminAuth);
 admin.use('/settings/*', adminAuth);
 admin.use('/site-users', adminAuth);
 admin.use('/site-users/*', adminAuth);
-admin.use('/reminders', adminAuth);
-admin.use('/reminders/*', adminAuth);
 admin.use('/changelogs', adminAuth);
 admin.use('/changelogs/*', adminAuth);
 admin.use('/audit-logs', adminAuth);
@@ -657,37 +655,6 @@ admin.post('/photos/import-r2', async (c) => {
   } while (cursor);
 
   return c.json({ imported: imported.length, skipped: skipped.length, album_id });
-});
-
-// ---- 提醒事项 CRUD ----
-admin.get('/reminders', async (c) => {
-  const { results } = await c.env.DB.prepare(
-    'SELECT * FROM reminders ORDER BY send_at, id'
-  ).all();
-  return c.json(results);
-});
-
-admin.post('/reminders', async (c) => {
-  const { title, content = '', send_at, recipient = '' } = await c.req.json();
-  if (!title || !send_at) return c.json({ detail: '标题和发送时间必填' }, 400);
-  const r = await c.env.DB.prepare(
-    'INSERT INTO reminders (title, content, send_at, recipient) VALUES (?, ?, ?, ?)'
-  ).bind(String(title), String(content), String(send_at), String(recipient)).run();
-  return c.json({ id: r.meta.last_row_id });
-});
-
-admin.put('/reminders/:id', async (c) => {
-  const { title, content, send_at, recipient, status } = await c.req.json();
-  if (!title || !send_at) return c.json({ detail: '标题和发送时间必填' }, 400);
-  await c.env.DB.prepare(
-    `UPDATE reminders SET title = ?, content = ?, send_at = ?, recipient = ?, status = ?, updated_at = datetime('now') WHERE id = ?`
-  ).bind(String(title), String(content), String(send_at), String(recipient), status || 'pending', c.req.param('id')).run();
-  return c.json({ ok: true });
-});
-
-admin.delete('/reminders/:id', async (c) => {
-  await c.env.DB.prepare('DELETE FROM reminders WHERE id = ?').bind(c.req.param('id')).run();
-  return c.json({ ok: true });
 });
 
 // ---- 版本更新日志 CRUD ----
