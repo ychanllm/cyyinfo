@@ -1,28 +1,20 @@
 <script setup>
-import { computed } from 'vue';
+import { computed, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { clearAdminToken } from '../../api';
 import { localize } from '../../i18n';
+import { navOrder, applyNavOrder, loadNavOrder } from '../../utils/admin-nav';
 import MiniPlayer from '../../components/MiniPlayer.vue';
 
 const { t } = useI18n();
 const router = useRouter();
 
-const navItems = computed(() => [
-  { to: localize('/admin/stats'), label: t('admin.stats') },
-  { to: localize('/admin/photos'), label: t('admin.photos') },
-  { to: localize('/admin/diaries'), label: t('admin.diaries') },
-  { to: localize('/admin/music'), label: t('admin.music') },
-  { to: localize('/admin/dishes'), label: t('admin.dishes') },
-  { to: localize('/admin/stores'), label: t('admin.stores') },
-  { to: localize('/admin/messages'), label: t('admin.messages') },
-  { to: localize('/admin/prizes'), label: t('admin.prizes') },
-  { to: localize('/admin/prize-records'), label: t('admin.prizeRecords') },
-  { to: localize('/admin/users'), label: t('admin.users') },
-  { to: localize('/admin/changelog'), label: t('admin.changelog') },
-  { to: localize('/admin/settings'), label: t('admin.settings') },
-]);
+const navItems = computed(() =>
+  applyNavOrder(navOrder.value).map((item) => ({ to: localize(item.path), label: t(item.labelKey) }))
+);
+
+onMounted(loadNavOrder);
 
 function logout() {
   clearAdminToken();
