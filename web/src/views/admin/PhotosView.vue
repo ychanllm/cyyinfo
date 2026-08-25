@@ -2,11 +2,22 @@
 import { ref, computed, onMounted } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { api, apiUpload } from '../../api';
+import AdminListBar from '../../components/AdminListBar.vue';
 
 const { t } = useI18n();
 const albums = ref([]);
 const loading = ref(true);
 const error = ref('');
+const albumPage = ref(1);
+const albumSize = 20;
+const albumTotal = ref(0);
+const albumKeyword = ref('');
+
+// 移动照片的目标相册用全量列表(不带分页参数走兼容的旧数组返回)
+const allAlbums = ref([]);
+async function loadAllAlbums() {
+  allAlbums.value = await api('/admin/albums', { admin: true });
+}
 
 // 新建相册表单
 const newTitle = ref('');
@@ -20,17 +31,33 @@ const current = ref(null);
 const photos = ref([]);
 const photosLoading = ref(false);
 const uploading = ref(false);
+const photoPage = ref(1);
+const photoTotal = ref(0);
+const photoKeyword = ref('');
 
 async function loadAlbums() {
   loading.value = true;
   error.value = '';
   try {
-    albums.value = await api('/admin/albums', { admin: true });
+    const data = await api(`/admin/albums?page=${albumPage.value}&size=${albumSize}&q=${encodeURIComponent(albumKeyword.value)}`, { admin: true });
+    albums.value = data.items;
+    albumTotal.value = data.total;
   } catch (e) {
     error.value = e.message;
   } finally {
     loading.value = false;
   }
+}
+
+function onAlbumSearch(q) {
+  albumKeyword.value = q;
+  albumPage.value = 1;
+  loadAlbums();
+}
+
+function onAlbumPage(p) {
+  albumPage.value = p;
+  loadAlbums();
 }
 
 async function createAlbum() {
@@ -56,6 +83,7 @@ async function createAlbum() {
     newDesc.value = '';
     newDescEn.value = '';
     await loadAlbums();
+    await loadAllAlbums();
   } catch (e) {
     error.value = e.message;
   } finally {
@@ -78,6 +106,7 @@ async function saveAlbum(album) {
       },
     });
     await loadAlbums();
+    await loadAllAlbums();
   } catch (e) {
     error.value = e.message;
   }
@@ -85,11 +114,19 @@ async function saveAlbum(album) {
 
 async function selectAlbum(album) {
   current.value = album;
+  photoPage.value = 1;
+  photoKeyword.value = '';
+  await reloadPhotos();
+}
+
+async function reloadPhotos() {
+  if (!current.value) return;
   photosLoading.value = true;
   error.value = '';
   try {
-    const data = await api(`/admin/albums/${album.id}`, { admin: true });
-    photos.value = data.photos;
+    const data = await api(`/admin/albums/${current.value.id}?page=${photoPage.value}&size=20&q=${encodeURIComponent(photoKeyword.value)}`, { admin: true });
+    photos.value = data.photos.items;
+    photoTotal.value = data.photos.total;
   } catch (e) {
     error.value = e.message;
   } finally {
@@ -97,17 +134,22 @@ async function selectAlbum(album) {
   }
 }
 
-async function reloadPhotos() {
-  if (!current.value) return;
-  const data = await api(`/admin/albums/${current.value.id}`, { admin: true });
-  photos.value = data.photos;
+function onPhotoSearch(q) {
+  photoKeyword.value = q;
+  photoPage.value = 1;
+  reloadPhotos();
+}
+
+function onPhotoPage(p) {
+  photoPage.value = p;
+  reloadPhotos();
 }
 
 // 可移动的目标相册（排除当前相册）
-const moveTargets = computed(() => albums.value.filter((a) => a.id !== current.value?.id));
+const moveTargets = computed(() => allAlbums.value.filter((a) => a.id !== current.value?.id));
 
 async function movePhoto(photo, targetAlbumId) {
-  const target = albums.value.find((a) => a.id === Number(targetAlbumId));
+  const target = allAlbums.value.find((a) => a.id === Number(targetAlbumId));
   if (!target) return;
   if (!confirm(t('adminPhotos.confirmMovePhoto', { title: target.title }))) return;
   error.value = '';
@@ -120,7 +162,7 @@ async function movePhoto(photo, targetAlbumId) {
     // 若移动的是当前相册封面，封面随之清空
     if (current.value?.cover_photo_id === photo.id) {
       current.value.cover_photo_id = null;
-      const album = albums.value.find((a) => a.id === current.value.id);
+      const album = allAlbums.value.find((a) => a.id === current.value.id);
       if (album) album.cover_photo_id = null;
     }
     await reloadPhotos();
@@ -197,7 +239,7 @@ async function setCover(photo) {
       body: { photo_id: photo.id },
     });
     current.value.cover_photo_id = photo.id;
-    const album = albums.value.find((a) => a.id === current.value.id);
+    const album = allAlbums.value.find((a) => a.id === current.value.id);
     if (album) album.cover_photo_id = photo.id;
   } catch (e) {
     error.value = e.message;
@@ -219,7 +261,10 @@ async function toggleHidden(photo) {
   }
 }
 
-onMounted(loadAlbums);
+onMounted(() => {
+  loadAlbums();
+  loadAllAlbums();
+});
 </script>
 
 <template>
@@ -240,6 +285,7 @@ onMounted(loadAlbums);
 
     <section class="card">
       <h3>{{ t('adminPhotos.albumList') }}</h3>
+      <AdminListBar :total="albumTotal" :page="albumPage" :size="20" @search="onAlbumSearch" @page="onAlbumPage" />
       <p v-if="loading" class="hint">{{ t('adminPhotos.loading') }}</p>
       <p v-else-if="!albums.length" class="hint">{{ t('adminPhotos.noAlbums') }}</p>
       <table v-else class="album-table">
@@ -286,6 +332,7 @@ onMounted(loadAlbums);
           />
         </label>
       </div>
+      <AdminListBar :total="photoTotal" :page="photoPage" :size="20" @search="onPhotoSearch" @page="onPhotoPage" />
       <p v-if="photosLoading" class="hint">{{ t('adminPhotos.loading') }}</p>
       <p v-else-if="!photos.length" class="hint">{{ t('adminPhotos.noPhotos') }}</p>
       <div v-else class="grid">

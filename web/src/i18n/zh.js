@@ -225,6 +225,10 @@ export default {
     statusCancelled: '已取消',
     confirmUse: '确定使用「{name}」吗？使用后不可撤销。',
   },
+  adminList: {
+    searchPh: '搜索…',
+    total: '共 {n} 条',
+  },
   admin: {
     brand: '管理后台',
     stats: '统计',

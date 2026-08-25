@@ -5,6 +5,7 @@ import { useI18n } from 'vue-i18n';
 import { api } from '../../api';
 import { localize } from '../../i18n';
 import DiaryCategoriesView from './DiaryCategoriesView.vue';
+import AdminListBar from '../../components/AdminListBar.vue';
 
 const { t } = useI18n();
 const router = useRouter();
@@ -13,17 +14,34 @@ const diaries = ref([]);
 const loading = ref(true);
 const error = ref('');
 const showCategories = ref(false); // 分类管理区块展开状态
+const page = ref(1);
+const size = 20;
+const total = ref(0);
+const keyword = ref('');
 
 async function loadDiaries() {
   loading.value = true;
   error.value = '';
   try {
-    diaries.value = await api('/admin/diaries', { admin: true });
+    const data = await api(`/admin/diaries?page=${page.value}&size=${size}&q=${encodeURIComponent(keyword.value)}`, { admin: true });
+    diaries.value = data.items;
+    total.value = data.total;
   } catch (e) {
     error.value = e.message;
   } finally {
     loading.value = false;
   }
+}
+
+function onSearch(q) {
+  keyword.value = q;
+  page.value = 1;
+  loadDiaries();
+}
+
+function onPage(p) {
+  page.value = p;
+  loadDiaries();
 }
 
 async function toggleStatus(diary) {
@@ -66,6 +84,8 @@ onMounted(loadDiaries);
     <p v-if="error" class="error">{{ error }}</p>
 
     <DiaryCategoriesView v-if="showCategories" class="categories-embed" />
+
+    <AdminListBar :total="total" :page="page" :size="20" @search="onSearch" @page="onPage" />
 
     <section class="card">
       <p v-if="loading" class="hint">{{ t('adminDiaries.loading') }}</p>
