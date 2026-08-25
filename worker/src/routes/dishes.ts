@@ -152,14 +152,19 @@ adminDishes.get('/', async (c) => {
   } else {
     rows = (await db.prepare(select).bind(...search.args).all<Row>()).results;
   }
-  // 想吃明细只查当前结果集,避免全量扫 dish_wants
+  // 想吃明细:分页路径只查当前页(IN 受 D1 单查询 100 绑定上限约束);
+  // 非分页兼容路径菜品数无上限,恢复全量 wants 查询
   const wantMap = new Map<number, string[]>();
   if (rows.length) {
-    const ids = rows.map((d) => d.id);
-    const { results: wants } = await db.prepare(
-      `SELECT w.dish_id, u.username FROM dish_wants w JOIN users u ON u.id = w.user_id
-       WHERE w.dish_id IN (${ids.map(() => '?').join(',')}) ORDER BY w.id`
-    ).bind(...ids).all<{ dish_id: number; username: string }>();
+    type WantRow = { dish_id: number; username: string };
+    const wants = meta
+      ? (await db.prepare(
+          `SELECT w.dish_id, u.username FROM dish_wants w JOIN users u ON u.id = w.user_id
+           WHERE w.dish_id IN (${rows.map(() => '?').join(',')}) ORDER BY w.id`
+        ).bind(...rows.map((d) => d.id)).all<WantRow>()).results
+      : (await db.prepare(
+          `SELECT w.dish_id, u.username FROM dish_wants w JOIN users u ON u.id = w.user_id ORDER BY w.id`
+        ).all<WantRow>()).results;
     for (const w of wants) {
       const list = wantMap.get(w.dish_id) ?? [];
       list.push(w.username);

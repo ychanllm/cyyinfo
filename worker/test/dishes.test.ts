@@ -288,6 +288,11 @@ describe('admin 菜品分页与搜索', () => {
     }
   });
 
+  afterAll(async () => {
+    await env.DB.prepare('DELETE FROM dish_wants').run();
+    await env.DB.prepare(`DELETE FROM dishes WHERE id IN (${dishIds.join(',')})`).run();
+  });
+
   it('不带参数保持数组返回(兼容)', async () => {
     const res = await SELF.fetch('http://x/api/admin/dishes', { headers: await adminAuth() });
     const body = (await res.json()) as unknown;

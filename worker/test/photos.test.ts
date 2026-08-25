@@ -155,6 +155,14 @@ describe('admin 相册列表分页与搜索', () => {
     expect(pctBody.total).toBe(0);
     expect(pctBody.items).toHaveLength(0);
   });
+
+  it('非法 page 回退 1,size 超上限封顶 100', async () => {
+    const res = await SELF.fetch(`http://x/api/admin/albums?page=abc&size=9999&q=${encodeURIComponent('分页测相册')}`, { headers: await adminHeaders() });
+    const body = (await res.json()) as any;
+    expect(body.page).toBe(1);
+    expect(body.size).toBe(100);
+    expect(body.total).toBe(25);
+  });
 });
 
 describe('admin 相册内照片分页与搜索', () => {

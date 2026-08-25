@@ -16,7 +16,11 @@ const albumKeyword = ref('');
 // 移动照片的目标相册用全量列表(不带分页参数走兼容的旧数组返回)
 const allAlbums = ref([]);
 async function loadAllAlbums() {
-  allAlbums.value = await api('/admin/albums', { admin: true });
+  try {
+    allAlbums.value = await api('/admin/albums', { admin: true });
+  } catch (e) {
+    error.value = e.message;
+  }
 }
 
 // 新建相册表单
@@ -332,7 +336,7 @@ onMounted(() => {
           />
         </label>
       </div>
-      <AdminListBar :total="photoTotal" :page="photoPage" :size="20" @search="onPhotoSearch" @page="onPhotoPage" />
+      <AdminListBar :key="current.id" :total="photoTotal" :page="photoPage" :size="20" @search="onPhotoSearch" @page="onPhotoPage" />
       <p v-if="photosLoading" class="hint">{{ t('adminPhotos.loading') }}</p>
       <p v-else-if="!photos.length" class="hint">{{ t('adminPhotos.noPhotos') }}</p>
       <div v-else class="grid">

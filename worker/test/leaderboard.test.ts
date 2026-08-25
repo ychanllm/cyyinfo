@@ -158,7 +158,7 @@ describe('排行榜', () => {
     expect(ab.views).toBeGreaterThanOrEqual(1);
     expect(ab.score).toBe(ab.likes * 5 + ab.views);
 
-    // 相册甲 9 分,相册乙 5+views(浏览量上报只再加 2 次 → 最高 8 分),甲排乙前;闲置相册不上榜
+    // 相册甲 9 分,相册乙 5+views(浏览量上报会再加 3 次 → 最高 8 分),甲排乙前;闲置相册不上榜
     expect(albums.map((x: any) => x.id)).toEqual([albumA, albumB]);
     expect(board.albums.some((x: any) => x.id === albumIdle)).toBe(false);
   });
