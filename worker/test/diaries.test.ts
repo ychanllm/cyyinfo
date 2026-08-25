@@ -1,5 +1,5 @@
-import { SELF } from 'cloudflare:test';
-import { describe, it, expect, beforeAll } from 'vitest';
+import { env, SELF } from 'cloudflare:test';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { applyMigrations, adminToken } from './helpers';
 
 let token: string;
@@ -124,5 +124,38 @@ describe('日记正文图片', () => {
     form2.append('file', new File([png], 'b.png', { type: 'image/png' }));
     const missing = await SELF.fetch('http://x/api/admin/diaries/999999/images', { method: 'POST', headers: authH, body: form2 });
     expect(missing.status).toBe(404);
+  });
+});
+
+describe('admin 日记分页与搜索', () => {
+  const diaryIds: number[] = [];
+
+  beforeAll(async () => {
+    await adminToken(); // 确保 author_id=1 的 admin_users 记录存在
+    for (let i = 1; i <= 25; i++) {
+      const r = await env.DB.prepare("INSERT INTO diaries (author_id, title, status) VALUES (1, ?, 'draft')")
+        .bind(`分页测日记${String(i).padStart(2, '0')}`).run();
+      diaryIds.push(Number(r.meta.last_row_id));
+    }
+  });
+
+  afterAll(async () => {
+    await env.DB.prepare(`DELETE FROM diaries WHERE id IN (${diaryIds.join(',')})`).run();
+  });
+
+  it('不带参数保持数组返回(兼容)', async () => {
+    const headers = { Authorization: `Bearer ${await adminToken()}` };
+    const body = (await (await SELF.fetch('http://x/api/admin/diaries', { headers })).json()) as unknown;
+    expect(Array.isArray(body)).toBe(true);
+  });
+
+  it('带 page/size/q 返回分页对象,按 id DESC', async () => {
+    const headers = { Authorization: `Bearer ${await adminToken()}` };
+    const res = await SELF.fetch(`http://x/api/admin/diaries?page=1&size=10&q=${encodeURIComponent('分页测日记')}`, { headers });
+    const body = (await res.json()) as any;
+    expect(body.total).toBe(25);
+    expect(body.items).toHaveLength(10);
+    expect(body.items[0].title).toBe('分页测日记25');
+    expect(body.items[9].title).toBe('分页测日记16');
   });
 });

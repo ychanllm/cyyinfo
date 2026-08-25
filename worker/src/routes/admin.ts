@@ -367,12 +367,21 @@ admin.delete('/photos/:id', async (c) => {
 
 // ---- 日记 CRUD ----
 admin.get('/diaries', async (c) => {
-  const { results } = await c.env.DB.prepare(
-    `SELECT d.id, d.title, d.title_en, d.slug, d.status, d.cover_filename, d.published_at, d.created_at, d.updated_at,
-            c.id AS category_id, c.name AS category_name
-     FROM diaries d LEFT JOIN diary_categories c ON c.id = d.category_id ORDER BY d.id DESC`
-  ).all();
-  return c.json(results);
+  const pagination = parsePagination(c, 20, 100);
+  const search = searchFilter(c, ['d.title', 'd.title_en']);
+  const base = `FROM diaries d LEFT JOIN diary_categories c ON c.id = d.category_id WHERE 1=1${search.where}`;
+  const cols = `d.id, d.title, d.title_en, d.slug, d.status, d.cover_filename, d.published_at, d.created_at, d.updated_at,
+                c.id AS category_id, c.name AS category_name`;
+  if (!pagination.requested) {
+    const { results } = await c.env.DB.prepare(`SELECT ${cols} ${base} ORDER BY d.id DESC`)
+      .bind(...search.args).all();
+    return c.json(results);
+  }
+  const total = await c.env.DB.prepare(`SELECT COUNT(*) AS n ${base}`)
+    .bind(...search.args).first<{ n: number }>();
+  const { results } = await c.env.DB.prepare(`SELECT ${cols} ${base} ORDER BY d.id DESC LIMIT ? OFFSET ?`)
+    .bind(...search.args, pagination.size, pagination.offset).all();
+  return c.json({ items: results, total: total?.n ?? 0, page: pagination.page, size: pagination.size });
 });
 
 admin.get('/diaries/:id', async (c) => {
