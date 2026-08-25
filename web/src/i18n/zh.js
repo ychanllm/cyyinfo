@@ -232,6 +232,7 @@ export default {
     photos: '照片',
     diaries: '日记',
     music: '音乐',
+    food: '想吃',
     dishes: '菜品管理',
     stores: '探店管理',
     messages: '留言',

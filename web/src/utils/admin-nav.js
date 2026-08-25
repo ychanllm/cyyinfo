@@ -5,8 +5,7 @@ import { api } from '../api';
 export const DEFAULT_NAV = [
   { key: 'stats', path: '/admin/stats', labelKey: 'admin.stats' },
   { key: 'media', path: '/admin/media', labelKey: 'admin.media' },
-  { key: 'dishes', path: '/admin/dishes', labelKey: 'admin.dishes' },
-  { key: 'stores', path: '/admin/stores', labelKey: 'admin.stores' },
+  { key: 'food', path: '/admin/food', labelKey: 'admin.food' },
   { key: 'messages', path: '/admin/messages', labelKey: 'admin.messages' },
   { key: 'prizes', path: '/admin/prizes', labelKey: 'admin.prizes' },
   { key: 'prize-records', path: '/admin/prize-records', labelKey: 'admin.prizeRecords' },
