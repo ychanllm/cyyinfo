@@ -15,8 +15,9 @@ const routes = [
   { path: '/music', name: 'music', component: () => import('./views/MusicView.vue') },
   { path: '/music/:id', name: 'music-album', component: () => import('./views/MusicAlbumView.vue') },
   { path: '/points', name: 'points', component: () => import('./views/PointsView.vue'), meta: { user: true } },
-  { path: '/dishes', name: 'dishes', component: () => import('./views/DishesView.vue') },
-  { path: '/stores', name: 'stores', component: () => import('./views/StoresView.vue') },
+  { path: '/food', name: 'food', component: () => import('./views/FoodView.vue') },
+  { path: '/dishes', redirect: '/food?tab=dishes' },
+  { path: '/stores', redirect: '/food?tab=stores' },
   {
     path: '/admin/login',
     name: 'admin-login',

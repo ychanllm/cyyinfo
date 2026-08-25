@@ -39,8 +39,7 @@ const links = computed(() => [
   { to: localize('/leaderboard'), label: t('nav.ranking'), icon: '🏆' },
   { to: localize('/music'), label: t('nav.music'), icon: '🎵' },
   { to: localize('/points'), label: t('nav.points'), icon: '📅' },
-  { to: localize('/dishes'), label: t('nav.dishes'), icon: '🍲' },
-  { to: localize('/stores'), label: t('nav.stores'), icon: '🧭' },
+  { to: localize('/food'), label: t('nav.food'), icon: '🍲' },
 ]);
 </script>
 

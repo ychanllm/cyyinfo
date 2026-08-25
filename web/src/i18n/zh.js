@@ -9,6 +9,7 @@ export default {
     music: '音乐',
     points: '签到',
     ranking: '排行',
+    food: '想吃',
     dishes: '点菜',
     stores: '探店',
     defaultSiteName: '我们的小站',
