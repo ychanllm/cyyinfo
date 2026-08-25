@@ -127,8 +127,14 @@ async function reloadPhotos() {
   if (!current.value) return;
   photosLoading.value = true;
   error.value = '';
+  const fetchPage = () => api(`/admin/albums/${current.value.id}?page=${photoPage.value}&size=20&q=${encodeURIComponent(photoKeyword.value)}`, { admin: true });
   try {
-    const data = await api(`/admin/albums/${current.value.id}?page=${photoPage.value}&size=20&q=${encodeURIComponent(photoKeyword.value)}`, { admin: true });
+    let data = await fetchPage();
+    // 当前页被掏空(如移走末页全部照片)且不在第一页时,自动回退一页重拉
+    if (data.photos.items.length === 0 && data.photos.total > 0 && photoPage.value > 1) {
+      photoPage.value -= 1;
+      data = await fetchPage();
+    }
     photos.value = data.photos.items;
     photoTotal.value = data.photos.total;
   } catch (e) {
