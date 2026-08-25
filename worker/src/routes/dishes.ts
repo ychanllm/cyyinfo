@@ -5,6 +5,7 @@ import { userAuth, adminAuth, verifyJwt } from '../auth';
 import { contentGuard } from '../guard';
 import { saveUpload } from '../upload';
 import { logAudit } from '../audit';
+import { parsePagination, searchFilter } from '../pagination';
 
 const MAX_NAME = 50;       // 菜名长度上限
 const MAX_DESC = 200;      // 描述长度上限
@@ -130,25 +131,43 @@ export const adminDishes = new Hono<AppEnv>();
 
 adminDishes.use('*', adminAuth);
 
-// 全部菜品（含下架）：want_count + 想吃用户名明细 + 投稿人
+// 全部菜品（含下架）：want_count + 想吃用户名明细 + 投稿人；带 page/size 时分页返回
 adminDishes.get('/', async (c) => {
   const db = c.env.DB;
-  const { results } = await db.prepare(
-    `SELECT d.*, u.username AS created_by_username,
-            (SELECT COUNT(*) FROM dish_wants w WHERE w.dish_id = d.id) AS want_count
-     FROM dishes d LEFT JOIN users u ON u.id = d.created_by_user_id
-     ORDER BY d.id DESC`
-  ).all<DishRow & { created_by_username: string | null; want_count: number }>();
-  const { results: wants } = await db.prepare(
-    'SELECT w.dish_id, u.username FROM dish_wants w JOIN users u ON u.id = w.user_id ORDER BY w.id'
-  ).all<{ dish_id: number; username: string }>();
-  const wantMap = new Map<number, string[]>();
-  for (const w of wants) {
-    const list = wantMap.get(w.dish_id) ?? [];
-    list.push(w.username);
-    wantMap.set(w.dish_id, list);
+  const pagination = parsePagination(c, 20, 100);
+  const search = searchFilter(c, ['d.name', 'd.description']);
+  const base = `FROM dishes d LEFT JOIN users u ON u.id = d.created_by_user_id WHERE 1=1${search.where}`;
+  const select = `SELECT d.*, u.username AS created_by_username,
+                  (SELECT COUNT(*) FROM dish_wants w WHERE w.dish_id = d.id) AS want_count
+                  ${base} ORDER BY d.id DESC`;
+  type Row = DishRow & { created_by_username: string | null; want_count: number };
+  let rows: Row[];
+  let meta: { total: number; page: number; size: number } | null = null;
+  if (pagination.requested) {
+    const total = await db.prepare(`SELECT COUNT(*) AS n ${base}`)
+      .bind(...search.args).first<{ n: number }>();
+    rows = (await db.prepare(`${select} LIMIT ? OFFSET ?`)
+      .bind(...search.args, pagination.size, pagination.offset).all<Row>()).results;
+    meta = { total: total?.n ?? 0, page: pagination.page, size: pagination.size };
+  } else {
+    rows = (await db.prepare(select).bind(...search.args).all<Row>()).results;
   }
-  return c.json(results.map((d) => ({ ...d, want_usernames: wantMap.get(d.id) ?? [] })));
+  // 想吃明细只查当前结果集,避免全量扫 dish_wants
+  const wantMap = new Map<number, string[]>();
+  if (rows.length) {
+    const ids = rows.map((d) => d.id);
+    const { results: wants } = await db.prepare(
+      `SELECT w.dish_id, u.username FROM dish_wants w JOIN users u ON u.id = w.user_id
+       WHERE w.dish_id IN (${ids.map(() => '?').join(',')}) ORDER BY w.id`
+    ).bind(...ids).all<{ dish_id: number; username: string }>();
+    for (const w of wants) {
+      const list = wantMap.get(w.dish_id) ?? [];
+      list.push(w.username);
+      wantMap.set(w.dish_id, list);
+    }
+  }
+  const items = rows.map((d) => ({ ...d, want_usernames: wantMap.get(d.id) ?? [] }));
+  return meta ? c.json({ items, ...meta }) : c.json(items);
 });
 
 // 管理员新建菜品（created_by_user_id 为 NULL）

@@ -273,3 +273,50 @@ describe('管理端菜品管理', () => {
     expect(del.status).toBe(404);
   });
 });
+
+describe('admin 菜品分页与搜索', () => {
+  const dishIds: number[] = [];
+
+  beforeAll(async () => {
+    // 先清掉本文件前面用例留下的菜品和想吃,保证计数可控
+    await env.DB.prepare('DELETE FROM dish_wants').run();
+    await env.DB.prepare('DELETE FROM dishes').run();
+    for (let i = 1; i <= 25; i++) {
+      const r = await env.DB.prepare("INSERT INTO dishes (name, description) VALUES (?, ?)")
+        .bind(`分页测菜${String(i).padStart(2, '0')}`, i === 1 ? '招牌描述' : '').run();
+      dishIds.push(Number(r.meta.last_row_id));
+    }
+  });
+
+  it('不带参数保持数组返回(兼容)', async () => {
+    const res = await SELF.fetch('http://x/api/admin/dishes', { headers: await adminAuth() });
+    const body = (await res.json()) as unknown;
+    expect(Array.isArray(body)).toBe(true);
+  });
+
+  it('分页:total/items/page/size 正确,按 id DESC', async () => {
+    const res = await SELF.fetch(`http://x/api/admin/dishes?page=2&size=10&q=${encodeURIComponent('分页测菜')}`, { headers: await adminAuth() });
+    const body = (await res.json()) as any;
+    expect(body.total).toBe(25);
+    expect(body.items).toHaveLength(10);
+    expect(body.items[0].name).toBe('分页测菜15'); // id DESC:25..16 是第 1 页,15..6 是第 2 页
+    expect(body.items[9].name).toBe('分页测菜06');
+  });
+
+  it('搜索匹配描述;want_usernames 只含当前页菜品', async () => {
+    // alice 想吃第 1 道,bob 想吃第 2 道
+    await SELF.fetch(`http://x/api/dishes/${dishIds[0]}/want`, { method: 'POST', headers: userAuth(alice) });
+    await SELF.fetch(`http://x/api/dishes/${dishIds[1]}/want`, { method: 'POST', headers: userAuth(bob) });
+
+    const res = await SELF.fetch(`http://x/api/admin/dishes?q=${encodeURIComponent('招牌描述')}`, { headers: await adminAuth() });
+    const body = (await res.json()) as any[];
+    expect(body).toHaveLength(1);
+    expect(body[0].name).toBe('分页测菜01');
+    expect(body[0].want_usernames).toEqual(['dishes_alice']);
+
+    // 分页形态同样只带当前页的 want_usernames
+    const paged = await SELF.fetch(`http://x/api/admin/dishes?page=1&size=1&q=${encodeURIComponent('分页测菜02')}`, { headers: await adminAuth() });
+    const pagedBody = (await paged.json()) as any;
+    expect(pagedBody.items[0].want_usernames).toEqual(['dishes_bob']);
+  });
+});
