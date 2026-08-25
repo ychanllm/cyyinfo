@@ -156,3 +156,43 @@ describe('admin 相册列表分页与搜索', () => {
     expect(pctBody.items).toHaveLength(0);
   });
 });
+
+describe('admin 相册内照片分页与搜索', () => {
+  let albumId = 0;
+  const photoIds: number[] = [];
+  const adminHeaders = async () => ({ Authorization: `Bearer ${await adminToken()}` });
+
+  beforeAll(async () => {
+    const a = await env.DB.prepare("INSERT INTO albums (title, sort_order) VALUES ('分页测照片册', 2000)").run();
+    albumId = Number(a.meta.last_row_id);
+    for (let i = 1; i <= 15; i++) {
+      const r = await env.DB.prepare("INSERT INTO photos (album_id, filename, caption, sort_order) VALUES (?, ?, ?, ?)")
+        .bind(albumId, `pgt/${i}.jpg`, `分页测照片${String(i).padStart(2, '0')}`, i).run();
+      photoIds.push(Number(r.meta.last_row_id));
+    }
+    const other = await env.DB.prepare("INSERT INTO photos (album_id, filename, caption, sort_order) VALUES (?, 'pgt/x.jpg', '无关照片', 100)")
+      .bind(albumId).run();
+    photoIds.push(Number(other.meta.last_row_id));
+  });
+
+  afterAll(async () => {
+    await env.DB.prepare(`DELETE FROM albums WHERE id = ${albumId}`).run(); // photos 随 CASCADE 删除
+  });
+
+  it('不带参数 photos 仍是数组(兼容)', async () => {
+    const res = await SELF.fetch(`http://x/api/admin/albums/${albumId}`, { headers: await adminHeaders() });
+    const body = (await res.json()) as any;
+    expect(Array.isArray(body.photos)).toBe(true);
+    expect(body.photos).toHaveLength(16);
+  });
+
+  it('带 page/size/q 时 photos 是分页对象', async () => {
+    const res = await SELF.fetch(`http://x/api/admin/albums/${albumId}?page=2&size=10&q=${encodeURIComponent('分页测照片')}`, { headers: await adminHeaders() });
+    const body = (await res.json()) as any;
+    expect(body.title).toBe('分页测照片册');
+    expect(body.photos.total).toBe(15);
+    expect(body.photos.page).toBe(2);
+    expect(body.photos.items).toHaveLength(5);
+    expect(body.photos.items[0].caption).toBe('分页测照片11');
+  });
+});

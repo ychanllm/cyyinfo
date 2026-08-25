@@ -290,10 +290,22 @@ admin.get('/albums/:id', async (c) => {
   const album = await c.env.DB.prepare('SELECT * FROM albums WHERE id = ?')
     .bind(c.req.param('id')).first();
   if (!album) return c.json({ detail: '相册不存在' }, 404);
-  const { results: photos } = await c.env.DB.prepare(
-    'SELECT id, filename, caption, caption_en, taken_at, sort_order, hidden FROM photos WHERE album_id = ? ORDER BY sort_order, id'
-  ).bind(c.req.param('id')).all();
-  return c.json({ ...album, photos });
+  const pagination = parsePagination(c, 20, 100);
+  const search = searchFilter(c, ['caption', 'caption_en']);
+  const cols = 'id, filename, caption, caption_en, taken_at, sort_order, hidden';
+  const base = `FROM photos WHERE album_id = ?${search.where}`;
+  if (!pagination.requested) {
+    const { results: photos } = await c.env.DB.prepare(
+      `SELECT ${cols} ${base} ORDER BY sort_order, id`
+    ).bind(c.req.param('id'), ...search.args).all();
+    return c.json({ ...album, photos });
+  }
+  const total = await c.env.DB.prepare(`SELECT COUNT(*) AS n ${base}`)
+    .bind(c.req.param('id'), ...search.args).first<{ n: number }>();
+  const { results: items } = await c.env.DB.prepare(
+    `SELECT ${cols} ${base} ORDER BY sort_order, id LIMIT ? OFFSET ?`
+  ).bind(c.req.param('id'), ...search.args, pagination.size, pagination.offset).all();
+  return c.json({ ...album, photos: { items, total: total?.n ?? 0, page: pagination.page, size: pagination.size } });
 });
 
 // ---- 照片 ----
