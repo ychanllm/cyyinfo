@@ -5,7 +5,7 @@ import { applyMigrations, adminToken, registerUser } from './helpers';
 // 用专有的「榜测」数据断言，避免与其他测试文件共享 D1 的数据互相干扰
 let user: { id: number; token: string };
 let albumA = 0; let albumB = 0; let albumIdle = 0;
-let photoA = 0; let photoB = 0;
+let photoA = 0; let photoB = 0; let photoHidden = 0;
 let diary1 = 0; let diary2 = 0; let diaryDraft = 0;
 let msg1 = 0; let msg2 = 0;
 
@@ -40,6 +40,10 @@ beforeAll(async () => {
   const p2 = await env.DB.prepare("INSERT INTO photos (album_id, filename, caption) VALUES (?, 'lb/b.jpg', '榜测照片乙')").bind(albumA).run();
   photoB = Number(p2.meta.last_row_id);
 
+  // 隐藏照片:有浏览有点赞,但相册榜不应并入
+  const p3 = await env.DB.prepare("INSERT INTO photos (album_id, filename, caption, hidden) VALUES (?, 'lb/hidden.jpg', '榜测隐藏照片', 1)").bind(albumA).run();
+  photoHidden = Number(p3.meta.last_row_id);
+
   const d1 = await env.DB.prepare(
     "INSERT INTO diaries (author_id, title, title_en, slug, status, published_at) VALUES (1, '榜测日记一', 'LB Diary One', 'lb-diary-1', 'published', datetime('now'))"
   ).run();
@@ -58,6 +62,8 @@ beforeAll(async () => {
   await postView('photo', photoA);
   await postView('photo', photoA);
   await postView('photo', photoB);
+  await postView('photo', photoHidden);
+  await postView('photo', photoHidden);
   await postView('diary', diary1);
   await postView('diary', diary1);
   await postView('diary', diary1);
@@ -67,6 +73,7 @@ beforeAll(async () => {
   // 点赞：相册乙 1 赞（score 5 > 相册甲 1）；照片乙 1 赞（score 6 > 照片甲 2）；日记一 1 赞（score 8）
   await toggleLike('album', albumB);
   await toggleLike('photo', photoB);
+  await toggleLike('photo', photoHidden);
   await toggleLike('diary', diary1);
 
   // 日记二下造一条留言和一条楼中楼回复,各 1 赞:合并后日记二 likes=2、score=2*5+1=11,超过日记一(8)
@@ -89,7 +96,7 @@ afterAll(async () => {
   await env.DB.prepare(`DELETE FROM albums WHERE id IN (${ids.join(',')})`).run(); // photos 随 CASCADE 删除
   const targets: [string, number][] = [
     ['album', albumA], ['album', albumB], ['album', albumIdle],
-    ['photo', photoA], ['photo', photoB],
+    ['photo', photoA], ['photo', photoB], ['photo', photoHidden],
     ['diary', diary1], ['diary', diary2], ['diary', diaryDraft],
   ];
   for (const [type, id] of targets) {
@@ -125,27 +132,35 @@ describe('浏览量上报', () => {
   });
 
   it('字符串数字 id 也接受', async () => {
-    expect((await postView('album', String(albumA))).status).toBe(200);
+    expect((await postView('album', String(albumB))).status).toBe(200);
   });
 });
 
 describe('排行榜', () => {
-  it('相册榜：按 score（赞*5 + 浏览）降序，含双语标题与 views/likes/score', async () => {
+  it('相册榜：照片(非隐藏)的赞和浏览并入相册合计,hidden 照片排除', async () => {
     const res = await SELF.fetch('http://x/api/leaderboard');
     expect(res.status).toBe(200);
     const board = (await res.json()) as any;
-
-    // 相册乙 1 赞（score ≥ 5）应排在只有浏览的相册甲之前
     const albums = board.albums.filter((x: any) => [albumA, albumB, albumIdle].includes(x.id));
-    expect(albums.map((x: any) => x.id)).toEqual([albumB, albumA]);
-    const ab = albums[0];
-    expect(ab.likes).toBe(1);
-    expect(ab.score).toBe(ab.likes * 5 + ab.views);
-    const aa = albums[1];
+
+    // 相册甲:自身 0 赞 + 照片乙 1 赞 = 1 赞(隐藏照片的 1 赞排除);
+    // 自身 1 浏览 + 照片甲 2 + 照片乙 1 = 4 浏览(隐藏照片的 2 浏览排除);score = 1*5+4 = 9
+    const aa = albums.find((x: any) => x.id === albumA);
+    expect(aa.likes).toBe(1);
+    expect(aa.views).toBe(4);
+    expect(aa.score).toBe(9);
     expect(aa.title).toBe('榜测相册甲');
     expect(aa.title_en).toBe('LB Album A');
-    expect(aa.likes).toBe(0);
-    expect(aa.views).toBeGreaterThanOrEqual(1);
+
+    // 相册乙:自身 1 赞,无照片;views ≥ 1(「浏览量上报」用例会再加,不断言精确值)
+    const ab = albums.find((x: any) => x.id === albumB);
+    expect(ab.likes).toBe(1);
+    expect(ab.views).toBeGreaterThanOrEqual(1);
+    expect(ab.score).toBe(ab.likes * 5 + ab.views);
+
+    // 相册甲 9 分,相册乙 5+views(浏览量上报只再加 2 次 → 最高 8 分),甲排乙前;闲置相册不上榜
+    expect(albums.map((x: any) => x.id)).toEqual([albumA, albumB]);
+    expect(board.albums.some((x: any) => x.id === albumIdle)).toBe(false);
   });
 
   it('照片榜：照片乙（1 赞 1 浏览 = 6）排在照片甲（2 浏览 = 2）前', async () => {

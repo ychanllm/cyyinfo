@@ -256,12 +256,29 @@ const LEADERBOARD_TAIL = `
   ORDER BY score DESC, t.id ASC LIMIT 10`;
 content.get('/leaderboard', async (c) => {
   const db = c.env.DB;
+  // 相册榜:并入其下非隐藏照片的赞与浏览(口径与照片榜一致,排除 hidden)
   const { results: albums } = await db.prepare(
     `SELECT t.id, t.title, t.title_en,
-            COALESCE(v.views, 0) AS views, COALESCE(l.likes, 0) AS likes,
-            COALESCE(l.likes, 0) * 5 + COALESCE(v.views, 0) AS score
-     FROM albums t ${LEADERBOARD_STATS} ${LEADERBOARD_TAIL}`
-  ).bind('album', 'album').all();
+            COALESCE(v.views, 0) + COALESCE(ps.photo_views, 0) AS views,
+            COALESCE(l.likes, 0) + COALESCE(ps.photo_likes, 0) AS likes,
+            (COALESCE(l.likes, 0) + COALESCE(ps.photo_likes, 0)) * 5
+              + COALESCE(v.views, 0) + COALESCE(ps.photo_views, 0) AS score
+     FROM albums t
+     LEFT JOIN (SELECT target_id, count AS views FROM view_counts WHERE target_type = 'album') v ON v.target_id = t.id
+     LEFT JOIN (SELECT target_id, COALESCE(SUM(count), 0) AS likes FROM likes WHERE target_type = 'album' GROUP BY target_id) l ON l.target_id = t.id
+     LEFT JOIN (
+       SELECT p.album_id,
+              COALESCE(SUM(pl.cnt), 0) AS photo_likes,
+              COALESCE(SUM(pv.cnt), 0) AS photo_views
+       FROM photos p
+       LEFT JOIN (SELECT target_id, SUM(count) AS cnt FROM likes WHERE target_type = 'photo' GROUP BY target_id) pl ON pl.target_id = p.id
+       LEFT JOIN (SELECT target_id, count AS cnt FROM view_counts WHERE target_type = 'photo') pv ON pv.target_id = p.id
+       WHERE p.hidden = 0
+       GROUP BY p.album_id
+     ) ps ON ps.album_id = t.id
+     WHERE COALESCE(v.views, 0) + COALESCE(l.likes, 0) + COALESCE(ps.photo_views, 0) + COALESCE(ps.photo_likes, 0) > 0
+     ORDER BY score DESC, t.id ASC LIMIT 10`
+  ).all();
   // 照片榜排除已隐藏的
   const { results: photos } = await db.prepare(
     `SELECT t.id, t.album_id, t.filename, t.caption, t.caption_en,
