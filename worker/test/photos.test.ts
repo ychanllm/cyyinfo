@@ -1,5 +1,5 @@
-import { SELF } from 'cloudflare:test';
-import { describe, it, expect, beforeAll } from 'vitest';
+import { SELF, env } from 'cloudflare:test';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { applyMigrations, adminToken } from './helpers';
 
 let token: string;
@@ -104,5 +104,55 @@ describe('相册与照片', () => {
     const restored = await (await SELF.fetch(`http://x/api/albums/${album.id}`)).json() as any;
     expect(restored.photos).toHaveLength(2);
     expect(restored.cover_filename).toBe(p1.filename);
+  });
+});
+
+describe('admin 相册列表分页与搜索', () => {
+  const albumIds: number[] = [];
+  const adminHeaders = async () => ({ Authorization: `Bearer ${await adminToken()}` });
+
+  beforeAll(async () => {
+    for (let i = 1; i <= 25; i++) {
+      const r = await env.DB.prepare('INSERT INTO albums (title, title_en, sort_order) VALUES (?, ?, ?)')
+        .bind(`分页测相册${String(i).padStart(2, '0')}`, `PageTest Album ${i}`, 1000 + i).run();
+      albumIds.push(Number(r.meta.last_row_id));
+    }
+  });
+
+  afterAll(async () => {
+    await env.DB.prepare(`DELETE FROM albums WHERE id IN (${albumIds.join(',')})`).run();
+  });
+
+  it('不带参数时保持旧的数组返回(兼容)', async () => {
+    const res = await SELF.fetch('http://x/api/admin/albums', { headers: await adminHeaders() });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as unknown;
+    expect(Array.isArray(body)).toBe(true);
+  });
+
+  it('带 page/size 返回 {items,total,page,size},q 过滤', async () => {
+    const res = await SELF.fetch('http://x/api/admin/albums?page=2&size=10&q=%E5%88%86%E9%A1%B5%E6%B5%8B%E7%9B%B8%E5%86%8C', { headers: await adminHeaders() });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as any;
+    expect(body.total).toBe(25);
+    expect(body.page).toBe(2);
+    expect(body.size).toBe(10);
+    expect(body.items).toHaveLength(10);
+    expect(body.items[0].title).toBe('分页测相册11');
+    expect(body.items.every((a: any) => a.title.startsWith('分页测相册'))).toBe(true);
+  });
+
+  it('q 匹配 title_en;特殊字符 % 被转义不匹配', async () => {
+    const en = await SELF.fetch('http://x/api/admin/albums?q=PageTest%20Album%207', { headers: await adminHeaders() });
+    // 只带 q 不带分页参数 → 仍是数组
+    const enBody = (await en.json()) as any[];
+    expect(Array.isArray(enBody)).toBe(true);
+    expect(enBody).toHaveLength(1);
+    expect(enBody[0].title).toBe('分页测相册07');
+
+    const pct = await SELF.fetch('http://x/api/admin/albums?page=1&q=%25', { headers: await adminHeaders() });
+    const pctBody = (await pct.json()) as any;
+    expect(pctBody.total).toBe(0);
+    expect(pctBody.items).toHaveLength(0);
   });
 });

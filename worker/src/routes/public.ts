@@ -5,24 +5,13 @@ import { signJwt } from '../auth';
 import { enforceRateLimit, clientIp } from '../security';
 import { contentGuard, getSetting } from '../guard';
 import { logAudit } from '../audit';
+import { parsePagination } from '../pagination';
 
 const pub = new Hono<AppEnv>();
 
 // 公开内容按 ?lang= 返回对应语言（默认中文），英文为空时回退中文
 function localized(c: { req: { query: (k: string) => string | undefined } }): 'en' | 'zh' {
   return c.req.query('lang') === 'en' ? 'en' : 'zh';
-}
-
-function parsePagination(c: { req: { query: (k: string) => string | undefined } }, defaultSize: number, maxSize: number) {
-  const pageRaw = c.req.query('page');
-  const sizeRaw = c.req.query('size');
-  const pageValue = Number(pageRaw);
-  const sizeValue = Number(sizeRaw);
-  const page = Number.isSafeInteger(pageValue) && pageValue > 0 ? pageValue : 1;
-  const size = Number.isSafeInteger(sizeValue) && sizeValue > 0
-    ? Math.min(sizeValue, maxSize)
-    : defaultSize;
-  return { page, size, offset: (page - 1) * size, requested: pageRaw !== undefined || sizeRaw !== undefined };
 }
 
 pub.get('/site/status', async (c) => {

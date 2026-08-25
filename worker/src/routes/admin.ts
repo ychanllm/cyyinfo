@@ -6,6 +6,7 @@ import { getSetting, setSetting } from '../guard';
 import { enforceRateLimit, clientIp } from '../security';
 import { saveUpload } from '../upload';
 import { logAudit } from '../audit';
+import { parsePagination, searchFilter } from '../pagination';
 
 interface AdminUserRow {
   id: number;
@@ -227,8 +228,19 @@ admin.put('/settings', async (c) => {
 
 // ---- 相册 CRUD ----
 admin.get('/albums', async (c) => {
-  const { results } = await c.env.DB.prepare('SELECT * FROM albums ORDER BY sort_order, id').all();
-  return c.json(results);
+  const pagination = parsePagination(c, 20, 100);
+  const search = searchFilter(c, ['title', 'title_en']);
+  const base = `FROM albums WHERE 1=1${search.where}`;
+  if (!pagination.requested) {
+    const { results } = await c.env.DB.prepare(`SELECT * ${base} ORDER BY sort_order, id`)
+      .bind(...search.args).all();
+    return c.json(results);
+  }
+  const total = await c.env.DB.prepare(`SELECT COUNT(*) AS n ${base}`)
+    .bind(...search.args).first<{ n: number }>();
+  const { results } = await c.env.DB.prepare(`SELECT * ${base} ORDER BY sort_order, id LIMIT ? OFFSET ?`)
+    .bind(...search.args, pagination.size, pagination.offset).all();
+  return c.json({ items: results, total: total?.n ?? 0, page: pagination.page, size: pagination.size });
 });
 
 admin.post('/albums', async (c) => {
