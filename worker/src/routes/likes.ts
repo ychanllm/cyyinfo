@@ -101,26 +101,37 @@ likes.post('/burst', likerAuth, async (c) => {
   }
   const db = c.env.DB;
   const today = todayCN();
-  const row = await db.prepare(
-    'SELECT daily_count, daily_date FROM likes WHERE user_id = ? AND target_type = ? AND target_id = ?'
-  ).bind(me.id, target.type, target.id)
-    .first<{ daily_count: number; daily_date: string | null }>();
-  const dailyUsed = row && row.daily_date === today ? row.daily_count : 0;
-  const allowed = Math.min(delta, MAX_PER_DAY - dailyUsed);
-  if (row) {
-    await db.prepare(
-      'UPDATE likes SET count = count + ?, daily_count = ?, daily_date = ? WHERE user_id = ? AND target_type = ? AND target_id = ?'
-    ).bind(allowed, dailyUsed + allowed, today, me.id, target.type, target.id).run();
-  } else {
-    await db.prepare(
-      'INSERT INTO likes (user_id, target_type, target_id, count, daily_count, daily_date) VALUES (?, ?, ?, ?, ?, ?)'
-    ).bind(me.id, target.type, target.id, allowed, allowed, today).run();
+  // 语句 A（幂等）：把行规范化到当日窗口——不存在则插入；存在且跨天则清零 daily_count
+  await db.prepare(
+    `INSERT INTO likes (user_id, target_type, target_id, count, daily_count, daily_date)
+     VALUES (?, ?, ?, 0, 0, ?)
+     ON CONFLICT(user_id, target_type, target_id) DO UPDATE SET
+       daily_count = CASE WHEN daily_date = ? THEN daily_count ELSE 0 END,
+       daily_date = ?`
+  ).bind(me.id, target.type, target.id, today, today, today).run();
+  // 语句 B 前读一次当日已用额度，用于计算实际增量（写审计；并发下允许轻微不准）
+  const before = await db.prepare(
+    'SELECT daily_count FROM likes WHERE user_id = ? AND target_type = ? AND target_id = ?'
+  ).bind(me.id, target.type, target.id).first<{ daily_count: number }>();
+  // 语句 B（原子扣减额度）：单条 UPDATE 内读写在 SQLite/D1 中原子，并发下后者看到前者已更新的 daily_count，不会超每日上限
+  const after = await db.prepare(
+    `UPDATE likes SET
+       count = count + MIN(?, MAX(0, ? - daily_count)),
+       daily_count = MIN(daily_count + ?, ?)
+     WHERE user_id = ? AND target_type = ? AND target_id = ? AND daily_date = ?
+     RETURNING daily_count`
+  ).bind(delta, MAX_PER_DAY, delta, MAX_PER_DAY, me.id, target.type, target.id, today)
+    .first<{ daily_count: number }>();
+  const dailyUsed = after?.daily_count ?? 0;
+  const applied = dailyUsed - (before?.daily_count ?? 0);
+  // 额度耗尽（实际增量为 0）时不写「连赞 +0」审计
+  if (applied > 0) {
+    await logAudit(db, 'like_burst', me.username, `连赞 +${applied} ${target.type}#${target.id}`);
   }
-  await logAudit(db, 'like_burst', me.username, `连赞 +${allowed} ${target.type}#${target.id}`);
   return c.json({
     liked: true,
     count: await countOf(db, target.type, target.id),
-    daily_remaining: MAX_PER_DAY - (dailyUsed + allowed),
+    daily_remaining: MAX_PER_DAY - dailyUsed,
   });
 });
 
