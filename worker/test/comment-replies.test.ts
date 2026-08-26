@@ -138,8 +138,8 @@ describe('评论点赞', () => {
 
     const batch = await SELF.fetch('http://x/api/likes/batch?target_type=message&ids=9201,9202', { headers: auth });
     expect(await batch.json() as any).toEqual({
-      '9201': { count: 1, liked: true },
-      '9202': { count: 0, liked: false },
+      '9201': { count: 1, liked: true, daily_remaining: 50 },
+      '9202': { count: 0, liked: false, daily_remaining: 50 },
     });
 
     // 旧类型不受影响
