@@ -113,6 +113,7 @@ onMounted(async () => {
               :target-id="d.id"
               :count="likes[d.id]?.count ?? 0"
               :liked="likes[d.id]?.liked ?? false"
+              :daily-remaining="likes[d.id]?.daily_remaining ?? null"
               @update="likes[d.id] = $event"
             />
           </p>

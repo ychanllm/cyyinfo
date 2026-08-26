@@ -77,6 +77,7 @@ onMounted(() => load());
             :target-id="a.id"
             :count="likes[a.id]?.count ?? 0"
             :liked="likes[a.id]?.liked ?? false"
+            :daily-remaining="likes[a.id]?.daily_remaining ?? null"
             @update="likes[a.id] = $event"
           />
         </div>

@@ -162,6 +162,7 @@ onMounted(load);
             :target-id="m.id"
             :count="likeState(m.id).count"
             :liked="likeState(m.id).liked"
+            :daily-remaining="likeState(m.id).daily_remaining ?? null"
             @update="likeStates[m.id] = $event"
           />
           <button type="button" class="reply-btn" @click="replyFor === m.id ? (replyFor = null) : openReply(m)">
@@ -194,6 +195,7 @@ onMounted(load);
                 :target-id="r.id"
                 :count="likeState(r.id).count"
                 :liked="likeState(r.id).liked"
+                :daily-remaining="likeState(r.id).daily_remaining ?? null"
                 @update="likeStates[r.id] = $event"
               />
               <button type="button" class="reply-btn" @click="replyFor === m.id ? (replyFor = null) : openReply(m)">

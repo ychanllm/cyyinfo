@@ -118,6 +118,7 @@ watch(() => route.params.id, load);
           :target-id="album.id"
           :count="albumLike.count"
           :liked="albumLike.liked"
+          :daily-remaining="albumLike.daily_remaining ?? null"
           @update="albumLike = $event"
         />
       </header>
@@ -142,6 +143,7 @@ watch(() => route.params.id, load);
               :target-id="p.id"
               :count="photoLikes[p.id]?.count ?? 0"
               :liked="photoLikes[p.id]?.liked ?? false"
+              :daily-remaining="photoLikes[p.id]?.daily_remaining ?? null"
               @update="photoLikes[p.id] = $event"
             />
           </div>
