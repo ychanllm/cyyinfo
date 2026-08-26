@@ -30,11 +30,18 @@ let heartSeq = 0;
 
 // 连击聚合
 const remaining = ref(null); // 当日剩余（flush 后以服务端为准；null = 用 prop/缺省）
+const remainingDate = ref(null); // remaining 对应的北京时间当日日期（'YYYY-MM-DD'）
 const pendingDelta = ref(0);
 let flushTimer = null;
 let flushing = false;
 
-const left = () => remaining.value ?? props.dailyRemaining ?? MAX_PER_DAY;
+const today = () => new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 10);
+
+const left = () => {
+  // remaining 仅当日有效，跨天视为过期，回落到 prop/缺省
+  if (remaining.value !== null && remainingDate.value === today()) return remaining.value;
+  return props.dailyRemaining ?? MAX_PER_DAY;
+};
 
 function showMaxTip() {
   maxTip.value = true;
@@ -64,16 +71,20 @@ function scheduleFlush() {
 
 async function flush() {
   if (flushing) { scheduleFlush(); return; }
-  const delta = pendingDelta.value;
+  // 单次 burst delta 上限 10，超出部分留给下一轮 flush
+  const delta = Math.min(pendingDelta.value, 10);
   if (!delta) return;
-  pendingDelta.value = 0;
+  pendingDelta.value -= delta;
   flushing = true;
   try {
     const data = await api('/likes/burst', {
       method: 'POST',
       body: { target_type: props.targetType, target_id: props.targetId, delta },
     });
-    if (typeof data.daily_remaining === 'number') remaining.value = data.daily_remaining;
+    if (typeof data.daily_remaining === 'number') {
+      remaining.value = data.daily_remaining;
+      remainingDate.value = today();
+    }
     emit('update', data); // 服务端权威计数（含他人点赞与每日上限钳制）
   } catch {
     // 失败回滚乐观增量与本地剩余
@@ -98,7 +109,12 @@ function tap(x) {
     showMaxTip();
     return;
   }
-  if (remaining.value !== null) remaining.value -= 1;
+  // 本地额度未播种或跨天过期：先以 prop/缺省播种，再在 tap 时递减（flush 后由服务端值校正）
+  if (remaining.value === null || remainingDate.value !== today()) {
+    remaining.value = props.dailyRemaining ?? MAX_PER_DAY;
+    remainingDate.value = today();
+  }
+  remaining.value -= 1;
   pendingDelta.value += 1;
   spawnHeart(x);
   pop.value = true;
