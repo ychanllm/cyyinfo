@@ -8,8 +8,13 @@ import { logAudit } from '../audit';
 const likes = new Hono<AppEnv>();
 
 const TARGET_TYPES = ['album', 'photo', 'diary', 'message'];
-const MAX_PER_USER = 50; // 单用户单目标连赞上限
-const MAX_DELTA = 10;    // 单次 burst 最大增量
+const MAX_PER_DAY = 50; // 单用户单目标每日点赞上限（按北京时间自然日）
+const MAX_DELTA = 10;   // 单次 burst 最大增量
+
+// 北京时间（UTC+8）当日日期 YYYY-MM-DD
+function todayCN(): string {
+  return new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 10);
+}
 
 function parseTarget(type: string | undefined, idRaw: unknown): { type: string; id: number } | null {
   const id = typeof idRaw === 'string' ? Number(idRaw) : idRaw;
@@ -83,7 +88,7 @@ likes.post('/toggle', likerAuth, async (c) => {
   return c.json({ liked, count: await countOf(db, target.type, target.id) });
 });
 
-// 连赞：同一用户可累加多个赞（注册用户或配置了归属用户的管理员），单用户单目标上限 50
+// 连赞：同一用户可累加多个赞（注册用户或配置了归属用户的管理员），每人每天单目标上限 50
 likes.post('/burst', likerAuth, async (c) => {
   const me = c.get('liker') as { id: number; username: string };
   const body = await c.req.json<{ target_type?: string; target_id?: number; delta?: number }>()
@@ -95,25 +100,49 @@ likes.post('/burst', likerAuth, async (c) => {
     return c.json({ detail: '非法 delta' }, 400);
   }
   const db = c.env.DB;
-  await db.prepare(
-    `INSERT INTO likes (user_id, target_type, target_id, count) VALUES (?, ?, ?, MIN(?, ?))
-     ON CONFLICT(user_id, target_type, target_id) DO UPDATE SET count = MIN(count + ?, ?)`
-  ).bind(me.id, target.type, target.id, delta, MAX_PER_USER, delta, MAX_PER_USER).run();
-  await logAudit(db, 'like_burst', me.username, `连赞 +${delta} ${target.type}#${target.id}`);
-  return c.json({ liked: true, count: await countOf(db, target.type, target.id) });
+  const today = todayCN();
+  const row = await db.prepare(
+    'SELECT daily_count, daily_date FROM likes WHERE user_id = ? AND target_type = ? AND target_id = ?'
+  ).bind(me.id, target.type, target.id)
+    .first<{ daily_count: number; daily_date: string | null }>();
+  const dailyUsed = row && row.daily_date === today ? row.daily_count : 0;
+  const allowed = Math.min(delta, MAX_PER_DAY - dailyUsed);
+  if (row) {
+    await db.prepare(
+      'UPDATE likes SET count = count + ?, daily_count = ?, daily_date = ? WHERE user_id = ? AND target_type = ? AND target_id = ?'
+    ).bind(allowed, dailyUsed + allowed, today, me.id, target.type, target.id).run();
+  } else {
+    await db.prepare(
+      'INSERT INTO likes (user_id, target_type, target_id, count, daily_count, daily_date) VALUES (?, ?, ?, ?, ?, ?)'
+    ).bind(me.id, target.type, target.id, allowed, allowed, today).run();
+  }
+  await logAudit(db, 'like_burst', me.username, `连赞 +${allowed} ${target.type}#${target.id}`);
+  return c.json({
+    liked: true,
+    count: await countOf(db, target.type, target.id),
+    daily_remaining: MAX_PER_DAY - (dailyUsed + allowed),
+  });
 });
 
-// 单个目标的计数（与公开内容同一鉴权层级；liked 仅对登录用户有意义）
+// 单个目标的计数（与公开内容同一鉴权层级；liked / daily_remaining 仅对登录用户有意义）
 likes.get('/', contentGuard, async (c) => {
   const target = parseTarget(c.req.query('target_type'), c.req.query('target_id'));
   if (!target) return c.json({ detail: '非法点赞目标' }, 400);
   const db = c.env.DB;
   const userId = await optionalUserId(c);
-  const liked = userId
-    ? Boolean(await db.prepare('SELECT id FROM likes WHERE user_id = ? AND target_type = ? AND target_id = ?')
-        .bind(userId, target.type, target.id).first())
-    : false;
-  return c.json({ count: await countOf(db, target.type, target.id), liked });
+  const mine = userId
+    ? await db.prepare('SELECT id, daily_count, daily_date FROM likes WHERE user_id = ? AND target_type = ? AND target_id = ?')
+        .bind(userId, target.type, target.id)
+        .first<{ id: number; daily_count: number; daily_date: string | null }>()
+    : null;
+  const body: { count: number; liked: boolean; daily_remaining?: number } = {
+    count: await countOf(db, target.type, target.id),
+    liked: Boolean(mine),
+  };
+  if (userId) {
+    body.daily_remaining = MAX_PER_DAY - (mine && mine.daily_date === todayCN() ? mine.daily_count : 0);
+  }
+  return c.json(body);
 });
 
 // 批量计数（列表页用）：ids 逗号分隔，上限 100
@@ -134,16 +163,24 @@ likes.get('/batch', contentGuard, async (c) => {
   const countMap = new Map(counts.map((r) => [r.target_id, r.n]));
 
   const likedSet = new Set<number>();
+  const remainingMap = new Map<number, number>();
   const userId = await optionalUserId(c);
   if (userId) {
+    const today = todayCN();
     const { results: mine } = await db.prepare(
-      `SELECT target_id FROM likes WHERE user_id = ? AND target_type = ? AND target_id IN (${placeholders})`
-    ).bind(userId, type, ...ids).all<{ target_id: number }>();
-    mine.forEach((r) => likedSet.add(r.target_id));
+      `SELECT target_id, daily_count, daily_date FROM likes WHERE user_id = ? AND target_type = ? AND target_id IN (${placeholders})`
+    ).bind(userId, type, ...ids).all<{ target_id: number; daily_count: number; daily_date: string | null }>();
+    mine.forEach((r) => {
+      likedSet.add(r.target_id);
+      remainingMap.set(r.target_id, MAX_PER_DAY - (r.daily_date === today ? r.daily_count : 0));
+    });
   }
 
-  const out: Record<string, { count: number; liked: boolean }> = {};
-  for (const id of ids) out[String(id)] = { count: countMap.get(id) ?? 0, liked: likedSet.has(id) };
+  const out: Record<string, { count: number; liked: boolean; daily_remaining?: number }> = {};
+  for (const id of ids) {
+    out[String(id)] = { count: countMap.get(id) ?? 0, liked: likedSet.has(id) };
+    if (userId) out[String(id)].daily_remaining = remainingMap.get(id) ?? MAX_PER_DAY;
+  }
   return c.json(out);
 });
 

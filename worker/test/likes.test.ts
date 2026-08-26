@@ -54,7 +54,7 @@ describe('点赞', () => {
     expect(await res.json() as any).toEqual({ liked: true, count: 1 });
 
     let get = await SELF.fetch('http://x/api/likes?target_type=diary&target_id=9001', { headers: auth(alice) });
-    expect(await get.json() as any).toEqual({ count: 1, liked: true });
+    expect(await get.json() as any).toEqual({ count: 1, liked: true, daily_remaining: 50 });
 
     // 未登录查看：count 在，liked 无意义（false）
     get = await SELF.fetch('http://x/api/likes?target_type=diary&target_id=9001');
@@ -64,7 +64,7 @@ describe('点赞', () => {
     expect(await res.json() as any).toEqual({ liked: false, count: 0 });
 
     get = await SELF.fetch('http://x/api/likes?target_type=diary&target_id=9001', { headers: auth(alice) });
-    expect(await get.json() as any).toEqual({ count: 0, liked: false });
+    expect(await get.json() as any).toEqual({ count: 0, liked: false, daily_remaining: 50 });
   });
 
   it('UNIQUE 约束：重复插入同一目标不重复计数', async () => {
@@ -87,9 +87,9 @@ describe('点赞', () => {
     const res = await SELF.fetch('http://x/api/likes/batch?target_type=album&ids=9003,9004,9005', { headers: auth(alice) });
     expect(res.status).toBe(200);
     expect(await res.json() as any).toEqual({
-      '9003': { count: 2, liked: true },
-      '9004': { count: 1, liked: true },
-      '9005': { count: 0, liked: false },
+      '9003': { count: 2, liked: true, daily_remaining: 50 },
+      '9004': { count: 1, liked: true, daily_remaining: 50 },
+      '9005': { count: 0, liked: false, daily_remaining: 50 },
     });
 
     // 未登录：计数相同，liked 全 false
@@ -114,20 +114,20 @@ describe('点赞', () => {
   it('burst：首次创建行并累加，计数为 SUM(count)', async () => {
     let res = await burst(alice, 'diary', 9100, 3);
     expect(res.status).toBe(200);
-    expect(await res.json() as any).toEqual({ liked: true, count: 3 });
+    expect(await res.json() as any).toEqual({ liked: true, count: 3, daily_remaining: 47 });
 
     res = await burst(alice, 'diary', 9100, 5);
-    expect(await res.json() as any).toEqual({ liked: true, count: 8 });
+    expect(await res.json() as any).toEqual({ liked: true, count: 8, daily_remaining: 42 });
 
     // 另一用户累加同一目标
     res = await burst(bob, 'diary', 9100, 2);
-    expect(await res.json() as any).toEqual({ liked: true, count: 10 });
+    expect(await res.json() as any).toEqual({ liked: true, count: 10, daily_remaining: 48 });
 
     const get = await SELF.fetch('http://x/api/likes?target_type=diary&target_id=9100', { headers: auth(alice) });
-    expect(await get.json() as any).toEqual({ count: 10, liked: true });
+    expect(await get.json() as any).toEqual({ count: 10, liked: true, daily_remaining: 42 });
 
     const batch = await SELF.fetch('http://x/api/likes/batch?target_type=diary&ids=9100', { headers: auth(bob) });
-    expect(await batch.json() as any).toEqual({ '9100': { count: 10, liked: true } });
+    expect(await batch.json() as any).toEqual({ '9100': { count: 10, liked: true, daily_remaining: 48 } });
 
     await toggle(alice, 'diary', 9100); // 清理（删 alice 行，剩 bob 的 2）
     const after = await SELF.fetch('http://x/api/likes?target_type=diary&target_id=9100');
@@ -148,14 +148,26 @@ describe('点赞', () => {
     expect(anon.status).toBe(401);
   });
 
-  it('burst：单用户上限 50 钳制', async () => {
-    for (let i = 0; i < 6; i++) await burst(alice, 'photo', 9102, 10); // 60 > 50
+  it('burst：每日上限 50 钳制，响应带 daily_remaining', async () => {
+    let res;
+    for (let i = 0; i < 6; i++) res = await burst(alice, 'photo', 9102, 10); // 60 > 50
+    expect(await res!.json() as any).toEqual({ liked: true, count: 50, daily_remaining: 0 });
     const get = await SELF.fetch('http://x/api/likes?target_type=photo&target_id=9102', { headers: auth(alice) });
-    const data = await get.json() as any;
-    expect(data).toEqual({ count: 50, liked: true });
+    expect(await get.json() as any).toEqual({ count: 50, liked: true, daily_remaining: 0 });
     await toggle(alice, 'photo', 9102); // 清理
     const cleaned = await SELF.fetch('http://x/api/likes?target_type=photo&target_id=9102');
     expect((await cleaned.json() as any).count).toBe(0);
+  });
+
+  it('burst：跨天（北京时间）后每日计数重置，累计 count 继续增长', async () => {
+    for (let i = 0; i < 5; i++) await burst(alice, 'diary', 9103, 10); // 当日 50
+    // 直接把 daily_date 改成历史日期，模拟跨天
+    await env.DB.prepare(
+      "UPDATE likes SET daily_date = '2000-01-01' WHERE user_id = ? AND target_type = 'diary' AND target_id = 9103"
+    ).bind(alice.id).run();
+    const res = await burst(alice, 'diary', 9103, 10);
+    expect(await res.json() as any).toEqual({ liked: true, count: 60, daily_remaining: 40 });
+    await toggle(alice, 'diary', 9103); // 清理
   });
 });
 
@@ -192,7 +204,7 @@ describe('管理员点赞（归属用户）', () => {
 
     const res = await adminBurst('diary', 9201, 2);
     expect(res.status).toBe(200);
-    expect(await res.json() as any).toEqual({ liked: true, count: 2 });
+    expect(await res.json() as any).toEqual({ liked: true, count: 2, daily_remaining: 48 });
 
     // 点赞记到归属用户头上
     const row = await env.DB.prepare('SELECT user_id, count FROM likes WHERE target_type = ? AND target_id = ?')
@@ -203,11 +215,11 @@ describe('管理员点赞（归属用户）', () => {
     const get = await SELF.fetch('http://x/api/likes?target_type=diary&target_id=9201', {
       headers: { Authorization: `Bearer ${token}` },
     });
-    expect(await get.json() as any).toEqual({ count: 2, liked: true });
+    expect(await get.json() as any).toEqual({ count: 2, liked: true, daily_remaining: 48 });
     const batch = await SELF.fetch('http://x/api/likes/batch?target_type=diary&ids=9201', {
       headers: { Authorization: `Bearer ${token}` },
     });
-    expect(await batch.json() as any).toEqual({ '9201': { count: 2, liked: true } });
+    expect(await batch.json() as any).toEqual({ '9201': { count: 2, liked: true, daily_remaining: 48 } });
 
     // toggle 取消
     const un = await SELF.fetch('http://x/api/likes/toggle', {
