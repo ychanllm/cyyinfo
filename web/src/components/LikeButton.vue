@@ -14,14 +14,13 @@ const props = defineProps({
   targetId: { type: Number, required: true },
   count: { type: Number, default: 0 },
   liked: { type: Boolean, default: false },
+  dailyRemaining: { type: Number, default: null }, // 服务端下发的当日剩余次数；null = 未知
 });
-const emit = defineEmits(['update']); // ({ liked, count })
+const emit = defineEmits(['update']); // ({ liked, count, daily_remaining? })
 
-const MAX_TAPS = 50;       // 与后端 MAX_PER_USER 一致（前端按本次会话点按次数钳制）
-const FLUSH_MS = 300;      // 连点聚合发送间隔
-const LONG_PRESS_MS = 500; // 长按判定
+const MAX_PER_DAY = 50;  // 与后端 MAX_PER_DAY 一致（仅作未知时的缺省）
+const FLUSH_MS = 300;    // 连点聚合发送间隔
 
-const busy = ref(false);   // 仅长按取消时用
 const pop = ref(false);    // 点赞成功的小弹跳动画
 const maxTip = ref(false); // 达上限提示
 
@@ -30,10 +29,17 @@ const hearts = ref([]); // [{ id, x, drift, rot }]
 let heartSeq = 0;
 
 // 连击聚合
-const taps = ref(0);        // 本次会话已点次数（用于上限提示）
+const remaining = ref(null); // 当日剩余（flush 后以服务端为准；null = 用 prop/缺省）
 const pendingDelta = ref(0);
 let flushTimer = null;
 let flushing = false;
+
+const left = () => remaining.value ?? props.dailyRemaining ?? MAX_PER_DAY;
+
+function showMaxTip() {
+  maxTip.value = true;
+  setTimeout(() => { maxTip.value = false; }, 1500);
+}
 
 function spawnHeart(x) {
   const id = ++heartSeq;
@@ -67,10 +73,12 @@ async function flush() {
       method: 'POST',
       body: { target_type: props.targetType, target_id: props.targetId, delta },
     });
-    emit('update', data); // 服务端权威计数（含他人点赞与上限钳制）
+    if (typeof data.daily_remaining === 'number') remaining.value = data.daily_remaining;
+    emit('update', data); // 服务端权威计数（含他人点赞与每日上限钳制）
   } catch {
-    // 失败回滚乐观增量
-    emit('update', { liked: props.liked, count: Math.max(0, props.count - delta) });
+    // 失败回滚乐观增量与本地剩余
+    if (remaining.value !== null) remaining.value += delta;
+    emit('update', { liked: props.liked, count: Math.max(0, props.count - delta), daily_remaining: left() });
   } finally {
     flushing = false;
     if (pendingDelta.value) scheduleFlush();
@@ -86,59 +94,20 @@ function tap(x) {
     router.push({ path: localize('/login'), query: { redirect: route.fullPath } });
     return;
   }
-  if (taps.value >= MAX_TAPS) {
-    maxTip.value = true;
-    setTimeout(() => { maxTip.value = false; }, 1500);
+  if (left() <= 0) {
+    showMaxTip();
     return;
   }
-  taps.value += 1;
+  if (remaining.value !== null) remaining.value -= 1;
   pendingDelta.value += 1;
   spawnHeart(x);
   pop.value = true;
   setTimeout(() => { pop.value = false; }, 400);
-  emit('update', { liked: true, count: props.count + 1 }); // 乐观更新
+  emit('update', { liked: true, count: props.count + 1, daily_remaining: left() }); // 乐观更新
   scheduleFlush();
 }
 
-// 点按 / 长按区分：pointerdown 起 500ms 内松开 = 点按(+1)；超过 = 长按(取消全部)
-let pressTimer = null;
-let longPressed = false;
-
-function onPointerDown() {
-  longPressed = false;
-  pressTimer = setTimeout(() => {
-    longPressed = true;
-    cancelAll();
-  }, LONG_PRESS_MS);
-}
-function onPointerUp(e) {
-  clearTimeout(pressTimer);
-  pressTimer = null;
-  if (!longPressed) tap(e.offsetX ?? 14);
-}
-function onPointerCancel() {
-  clearTimeout(pressTimer);
-  pressTimer = null;
-}
-
-async function cancelAll() {
-  if (busy.value || !canLike() || !props.liked) return;
-  busy.value = true;
-  pendingDelta.value = 0; // 丢弃未发送的连点
-  try {
-    const data = await api('/likes/toggle', {
-      method: 'POST',
-      body: { target_type: props.targetType, target_id: props.targetId },
-    });
-    taps.value = 0;
-    emit('update', data);
-  } catch { /* 错误已由 api.js 统一处理 */ } finally {
-    busy.value = false;
-  }
-}
-
 onUnmounted(() => {
-  clearTimeout(pressTimer);
   clearTimeout(flushTimer);
 });
 </script>
@@ -148,12 +117,8 @@ onUnmounted(() => {
     type="button"
     class="like-btn"
     :class="{ liked, pop }"
-    :disabled="busy"
-    :title="canLike() ? (liked ? t('likes.unlikeAll') : t('likes.like')) : t('likes.loginToLike')"
-    @pointerdown.stop.prevent="onPointerDown"
-    @pointerup.stop.prevent="onPointerUp"
-    @pointerleave="onPointerCancel"
-    @pointercancel="onPointerCancel"
+    :title="canLike() ? t('likes.like') : t('likes.loginToLike')"
+    @click.stop.prevent="tap($event.offsetX ?? 14)"
     @contextmenu.prevent
   >
     <span class="heart">{{ liked ? '♥' : '♡' }}</span>
@@ -207,9 +172,6 @@ onUnmounted(() => {
   40% { transform: scale(1.45); }
   70% { transform: scale(0.9); }
   100% { transform: scale(1); }
-}
-.like-btn:disabled {
-  cursor: default;
 }
 .fly-heart {
   position: absolute;
