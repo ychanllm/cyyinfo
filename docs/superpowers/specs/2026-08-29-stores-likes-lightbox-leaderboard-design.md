@@ -26,19 +26,19 @@ CREATE TABLE likes_new (
   user_id INTEGER NOT NULL REFERENCES users(id),
   target_type TEXT NOT NULL CHECK (target_type IN ('album','photo','diary','message','store')),
   target_id INTEGER NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
   count INTEGER NOT NULL DEFAULT 1,
   daily_count INTEGER NOT NULL DEFAULT 0,
   daily_date TEXT,
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
   UNIQUE(user_id, target_type, target_id)
 );
-INSERT INTO likes_new SELECT id, user_id, target_type, target_id, count, daily_count, daily_date, created_at FROM likes;
+INSERT INTO likes_new SELECT id, user_id, target_type, target_id, created_at, count, daily_count, daily_date FROM likes;
 DROP TABLE likes;
 ALTER TABLE likes_new RENAME TO likes;
 CREATE INDEX IF NOT EXISTS idx_likes_target ON likes(target_type, target_id);
 ```
 
-（实际列以 0009+0011+0013+0021 演进后的现状为准，迁移前用 `.schema likes` 核对。）
+（以上已与本地 D1 `.schema likes` 现状逐列核对。）
 
 ## 二、后端
 
