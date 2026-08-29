@@ -1,8 +1,7 @@
 <script setup>
 import { ref, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
-import { unreadCount, unreadItems, hasNotificationToken, loadUnread, markRead, notificationText } from '../notifications';
-import { localize } from '../i18n';
+import { unreadCount, unreadItems, hasNotificationToken, loadUnread, markRead, notificationText, notificationLink } from '../notifications';
 
 const router = useRouter();
 const visible = ref(false);
@@ -25,11 +24,7 @@ function close() {
 async function go(n) {
   close();
   await markRead([n.id]);
-  if (n.target_type === 'diary' && n.target_id) {
-    router.push(localize(`/diaries/${n.target_id}`));
-  } else {
-    router.push(localize('/'));
-  }
+  router.push(notificationLink(n));
 }
 </script>
 
