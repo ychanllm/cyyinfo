@@ -222,6 +222,12 @@ afterAll(async () => {
     'DELETE FROM notifications WHERE message_id IN (SELECT id FROM messages WHERE target_type = ? AND target_id = ?)'
   ).bind('diary', diaryId).run();
   await env.DB.prepare('DELETE FROM messages WHERE target_type = ? AND target_id = ?').bind('diary', diaryId).run();
+  // 串测试日记（讨论串用例所建，id 可能落在 messages.test 的 diary#2 上）同样清理
+  await env.DB.prepare(
+    "DELETE FROM notifications WHERE message_id IN (SELECT id FROM messages WHERE content LIKE '串-%')"
+  ).run();
+  await env.DB.prepare("DELETE FROM messages WHERE content LIKE '串-%'").run();
+  await env.DB.prepare("DELETE FROM diaries WHERE title = '串测试日记'").run();
 });
 
 describe('通知表扩展（0023）', () => {
@@ -243,5 +249,65 @@ describe('通知表扩展（0023）', () => {
       "SELECT COUNT(*) AS n FROM notifications WHERE type IN ('reply','comment')"
     ).first<{ n: number }>();
     expect(row!.n).toBeGreaterThan(0);
+  });
+});
+
+describe('通知范围：评论类扩展', () => {
+  it('photo/site 新评论立即通知站长，未审核 excerpt 为 null', async () => {
+    const before = await notifCount('admin', 1);
+    const p = await postMsg({ nickname: '拍客', content: '照片真好看', target_type: 'photo', target_id: 9501 });
+    expect(p.status).toBe(202);
+    const s = await postMsg({ nickname: '过客', content: '留言板报到', target_type: 'site' });
+    expect(s.status).toBe(202);
+    expect(await notifCount('admin', 1)).toBe(before + 2);
+
+    const data = (await (await getUnread(admin)).json()) as any;
+    const photoN = data.items.find((n: any) => n.type === 'comment' && n.target_type === 'photo' && n.actor_nickname === '拍客');
+    expect(photoN).toBeTruthy();
+    expect(photoN.excerpt).toBeNull(); // 待审核内容不透出
+
+    // 清理待审核留言（admin DELETE 级联清 notifications）
+    const authH = { Authorization: `Bearer ${admin}` };
+    const pending = await (await SELF.fetch('http://x/api/admin/messages?pending=1', { headers: authH })).json() as any[];
+    for (const m of pending.filter((m) => ['照片真好看', '留言板报到'].includes(m.content))) {
+      await SELF.fetch(`http://x/api/admin/messages/${m.id}`, { method: 'DELETE', headers: authH });
+    }
+  });
+
+  it('日记讨论串：参与过的登录用户收到 thread；自己/回复不触发', async () => {
+    // 独立日记隔离订阅者
+    const create = await SELF.fetch('http://x/api/admin/diaries', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${admin}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: '串测试日记' }),
+    });
+    const tid = ((await create.json()) as any).id;
+
+    // alice 参与讨论
+    await postMsg({ nickname: '爱丽丝', content: '串- alice 先评', target_type: 'diary', target_id: tid }, alice.token);
+    const baseAlice = await notifCount('user', alice.id);
+    // bob 顶级评论 → alice 收 thread；bob 自己收不到自己的
+    await postMsg({ nickname: '鲍勃', content: '串- bob 新评', target_type: 'diary', target_id: tid }, bob.token);
+    expect(await notifCount('user', alice.id)).toBe(baseAlice + 1);
+    const thread = await env.DB.prepare(
+      "SELECT type, actor_nickname, target_type, target_id FROM notifications WHERE recipient_type = 'user' AND recipient_id = ? AND type = 'thread' ORDER BY id DESC"
+    ).bind(alice.id).first<any>();
+    expect(thread).toMatchObject({ actor_nickname: '鲍勃', target_type: 'diary', target_id: tid });
+
+    // 回复不触发 thread：alice 回复 bob 的评论 → alice 的 thread 数不变
+    const bobTop = await env.DB.prepare("SELECT id FROM messages WHERE content = '串- bob 新评'").first<{ id: number }>();
+    const threadBefore = await env.DB.prepare(
+      "SELECT COUNT(*) AS n FROM notifications WHERE type = 'thread'"
+    ).first<{ n: number }>();
+    await postMsg({ nickname: '爱丽丝', content: '串- alice 回复', target_type: 'diary', target_id: tid, parent_id: bobTop!.id }, alice.token);
+    const threadAfter = await env.DB.prepare(
+      "SELECT COUNT(*) AS n FROM notifications WHERE type = 'thread'"
+    ).first<{ n: number }>();
+    expect(threadAfter!.n).toBe(threadBefore!.n);
+
+    // 游客评论不进入订阅（user_id NULL）：游客再评 → alice 仍收 thread（游客是新评论者），但游客自己永远收不到
+    const guestBefore = await notifCount('user', alice.id);
+    await postMsg({ nickname: '游客丙', content: '串- 游客评', target_type: 'diary', target_id: tid });
+    expect(await notifCount('user', alice.id)).toBe(guestBefore + 1);
   });
 });

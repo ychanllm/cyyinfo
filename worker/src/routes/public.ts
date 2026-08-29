@@ -253,6 +253,25 @@ content.post('/messages', async (c) => {
           'INSERT INTO notifications (recipient_type, recipient_id, type, message_id, actor_nickname, target_type, target_id) VALUES (?, ?, ?, ?, ?, ?, ?)'
         ).bind('admin', diary.author_id, 'comment', inserted!.id, nickname.trim(), 'diary', target_id).run();
       }
+      // 讨论串订阅：通知在该日记评论过的其他登录用户（自己的评论不通知自己）
+      const { results: subscribers } = await c.env.DB.prepare(
+        'SELECT DISTINCT user_id FROM messages WHERE target_type = ? AND target_id = ? AND user_id IS NOT NULL'
+      ).bind(target_type, target_id).all<{ user_id: number }>();
+      for (const s of subscribers) {
+        if (s.user_id === userId) continue;
+        await c.env.DB.prepare(
+          'INSERT INTO notifications (recipient_type, recipient_id, type, message_id, actor_nickname, target_type, target_id) VALUES (?, ?, ?, ?, ?, ?, ?)'
+        ).bind('user', s.user_id, 'thread', inserted!.id, nickname.trim(), 'diary', target_id).run();
+      }
+    } else if (!parentId && (target_type === 'photo' || target_type === 'site')) {
+      // 照片/留言板新评论（待审核）→ 立即通知全体站长；excerpt 由查询层 is_approved 保护
+      const { results: admins } = await c.env.DB.prepare('SELECT id FROM admin_users').all<{ id: number }>();
+      for (const a of admins) {
+        if (payload?.role === 'admin' && Number(payload.sub) === a.id) continue; // 站长自己留的不通知
+        await c.env.DB.prepare(
+          'INSERT INTO notifications (recipient_type, recipient_id, type, message_id, actor_nickname, target_type, target_id) VALUES (?, ?, ?, ?, ?, ?, ?)'
+        ).bind('admin', a.id, 'comment', inserted!.id, nickname.trim(), target_type, target_id).run();
+      }
     }
   } catch { /* 通知失败不影响评论 */ }
   const targetLabel = target_id ? `${target_type}#${target_id}` : target_type;
