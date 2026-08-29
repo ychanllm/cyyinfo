@@ -7,7 +7,7 @@ import { logAudit } from '../audit';
 
 const likes = new Hono<AppEnv>();
 
-const TARGET_TYPES = ['album', 'photo', 'diary', 'message'];
+const TARGET_TYPES = ['album', 'photo', 'diary', 'message', 'store'];
 const MAX_PER_DAY = 50; // 单用户单目标每日点赞上限（按北京时间自然日）
 const MAX_DELTA = 10;   // 单次 burst 最大增量
 
@@ -106,6 +106,13 @@ async function notifyLike(
       recipient = { type: 'user', id: m.user_id };
       jump = { type: m.target_type, id: m.target_id };
       detail = '评论';
+    } else if (target.type === 'store') {
+      const s = await db.prepare('SELECT id FROM stores WHERE id = ?').bind(target.id).first();
+      const admin = await db.prepare('SELECT id FROM admin_users LIMIT 1').first<{ id: number }>();
+      if (!s || !admin) return;
+      if (liker.role === 'admin') return; // 站长操作不通知
+      recipient = { type: 'admin', id: admin.id };
+      detail = '店铺';
     } else {
       return;
     }

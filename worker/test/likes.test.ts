@@ -241,3 +241,52 @@ describe('管理员点赞（归属用户）', () => {
     expect(res.status).toBe(401);
   });
 });
+
+describe('店铺点赞（store）', () => {
+  let storeId = 0;
+
+  beforeAll(async () => {
+    const r = await env.DB.prepare("INSERT INTO stores (name, is_active) VALUES ('赞测店铺', 1)").run();
+    storeId = Number(r.meta.last_row_id);
+  });
+
+  it('toggle/burst/batch 支持 target_type=store；dish 仍 400', async () => {
+    const res = await toggle(alice, 'store', storeId);
+    expect(res.status).toBe(200);
+    expect(await res.json() as any).toMatchObject({ liked: true, count: 1 });
+
+    const batch = await SELF.fetch(`http://x/api/likes/batch?target_type=store&ids=${storeId},999999`, { headers: auth(alice) });
+    const b = await batch.json() as any;
+    expect(b[String(storeId)]).toMatchObject({ count: 1, liked: true });
+
+    // dish 不在 CHECK 内
+    expect((await toggle(alice, 'dish', 1)).status).toBe(400);
+  });
+
+  it('赞店铺 → 站长收到 like 通知（detail=店铺，jump=store）', async () => {
+    const n = await env.DB.prepare(
+      "SELECT recipient_type, type, actor_nickname, target_type, target_id, detail FROM notifications WHERE type = 'like' AND target_type = 'store' ORDER BY id DESC"
+    ).first<any>();
+    expect(n).toMatchObject({
+      recipient_type: 'admin', type: 'like', actor_nickname: 'likes_alice',
+      target_type: 'store', target_id: storeId, detail: '店铺',
+    });
+  });
+
+  it('迁移后旧点赞数据与 daily 字段完好', async () => {
+    const row = await env.DB.prepare(
+      "SELECT sql FROM sqlite_master WHERE name = 'likes'"
+    ).first<{ sql: string }>();
+    expect(row!.sql).toContain("'store'");
+    expect(row!.sql).toContain('daily_count');
+    // 本文件既有用例的点赞行仍在（count 字段非空）
+    const cnt = await env.DB.prepare('SELECT COUNT(*) AS n FROM likes').first<{ n: number }>();
+    expect(cnt!.n).toBeGreaterThan(0);
+  });
+
+  it('清理', async () => {
+    await env.DB.prepare("DELETE FROM notifications WHERE type = 'like' AND target_type = 'store'").run();
+    await env.DB.prepare("DELETE FROM likes WHERE target_type = 'store'").run();
+    await env.DB.prepare('DELETE FROM stores WHERE id = ?').bind(storeId).run();
+  });
+});
