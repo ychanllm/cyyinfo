@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import bcrypt from 'bcryptjs';
 import type { AppEnv, Env } from '../types';
-import { signJwt } from '../auth';
+import { signJwt, verifyJwt } from '../auth';
 import { enforceRateLimit, clientIp } from '../security';
 import { contentGuard, getSetting } from '../guard';
 import { logAudit } from '../audit';
@@ -12,6 +12,13 @@ const pub = new Hono<AppEnv>();
 // 公开内容按 ?lang= 返回对应语言（默认中文），英文为空时回退中文
 function localized(c: { req: { query: (k: string) => string | undefined } }): 'en' | 'zh' {
   return c.req.query('lang') === 'en' ? 'en' : 'zh';
+}
+
+// 从可选的 Authorization 解析 JWT payload（无 token / 无效 token 视为游客，不影响评论）
+async function optionalPayload(c: { req: { header: (k: string) => string | undefined }; env: Env }) {
+  const header = c.req.header('Authorization') ?? '';
+  const token = header.replace(/^Bearer\s+/i, '');
+  return token ? verifyJwt(c.env, token) : null;
 }
 
 pub.get('/site/status', async (c) => {
@@ -203,11 +210,12 @@ content.post('/messages', async (c) => {
   if (!['diary', 'photo', 'site'].includes(target_type)) return c.json({ detail: '非法目标类型' }, 400);
   // 楼中楼回复：parent 必须存在且与回复同 target；回复的回复挂到顶级（一层楼中楼）
   let parentId: number | null = null;
+  let parent: { id: number; target_type: string; target_id: number | null; parent_id: number | null; user_id: number | null } | null = null;
   if (parent_id !== null && parent_id !== undefined) {
     if (!Number.isInteger(parent_id) || parent_id <= 0) return c.json({ detail: '非法的父评论' }, 400);
-    const parent = await c.env.DB.prepare(
-      'SELECT id, target_type, target_id, parent_id FROM messages WHERE id = ?'
-    ).bind(parent_id).first<{ id: number; target_type: string; target_id: number | null; parent_id: number | null }>();
+    parent = await c.env.DB.prepare(
+      'SELECT id, target_type, target_id, parent_id, user_id FROM messages WHERE id = ?'
+    ).bind(parent_id).first<{ id: number; target_type: string; target_id: number | null; parent_id: number | null; user_id: number | null }>();
     if (!parent) return c.json({ detail: '父评论不存在' }, 400);
     const sameTarget = parent.target_type === target_type
       && (parent.target_id ?? null) === (target_id ?? null);
@@ -221,8 +229,32 @@ content.post('/messages', async (c) => {
   if (quote && quote.length > 500) return c.json({ detail: '引用内容过长（500 字以内）' }, 400);
   // 日记评论免审核直接发布；site/photo 保持待审核
   const approved = target_type === 'diary' ? 1 : 0;
-  await c.env.DB.prepare('INSERT INTO messages (nickname, content, target_type, target_id, quote_text, parent_id, is_approved) VALUES (?, ?, ?, ?, ?, ?, ?)')
-    .bind(nickname.trim(), text.trim(), target_type, target_id, quote, parentId, approved).run();
+  // 登录用户发的评论记录 user_id（游客为 NULL）；payload 同时用于排除站长自评
+  const payload = await optionalPayload(c);
+  const userId = payload?.role === 'user' ? Number(payload.sub) : null;
+  const inserted = await c.env.DB.prepare(
+    'INSERT INTO messages (nickname, content, target_type, target_id, quote_text, parent_id, is_approved, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id'
+  ).bind(nickname.trim(), text.trim(), target_type, target_id, quote, parentId, approved, userId)
+    .first<{ id: number }>();
+  // 生成通知；失败不阻断评论
+  try {
+    if (parentId && parent!.user_id && parent!.user_id !== userId) {
+      // 回复 → 通知父评论作者（仅登录用户发的评论可定位接收人）
+      await c.env.DB.prepare(
+        'INSERT INTO notifications (recipient_type, recipient_id, type, message_id, actor_nickname, target_type, target_id) VALUES (?, ?, ?, ?, ?, ?, ?)'
+      ).bind('user', parent!.user_id, 'reply', inserted!.id, nickname.trim(), target_type, target_id).run();
+    } else if (!parentId && target_type === 'diary' && target_id) {
+      // 日记顶级评论 → 通知站长作者；站长自己评论自己除外
+      const diary = await c.env.DB.prepare('SELECT author_id FROM diaries WHERE id = ?')
+        .bind(target_id).first<{ author_id: number }>();
+      const isAuthor = payload?.role === 'admin' && Number(payload.sub) === diary?.author_id;
+      if (diary && !isAuthor) {
+        await c.env.DB.prepare(
+          'INSERT INTO notifications (recipient_type, recipient_id, type, message_id, actor_nickname, target_type, target_id) VALUES (?, ?, ?, ?, ?, ?, ?)'
+        ).bind('admin', diary.author_id, 'comment', inserted!.id, nickname.trim(), 'diary', target_id).run();
+      }
+    }
+  } catch { /* 通知失败不影响评论 */ }
   const targetLabel = target_id ? `${target_type}#${target_id}` : target_type;
   await logAudit(c.env.DB, 'message_post', nickname.trim(), `在 ${targetLabel} 留言：${text.trim().slice(0, 30)}`);
   return approved
