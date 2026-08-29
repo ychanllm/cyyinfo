@@ -42,6 +42,15 @@ describe('移动端图片类型', () => {
     keys.push(url.replace('/uploads/', ''));
   });
 
+  it('空 MIME 上传的 jpg 按扩展名伺服为 image/jpeg', async () => {
+    const res = await upload(new File([new Uint8Array([0xff, 0xd8])], 'photo2.jpg', { type: '' }));
+    expect(res.status).toBe(200);
+    const { url } = (await res.json()) as any;
+    keys.push(url.replace('/uploads/', ''));
+    const get = await SELF.fetch(`http://x${url}`);
+    expect(get.headers.get('Content-Type')).toBe('image/jpeg');
+  });
+
   it('空 MIME + 非法扩展名仍 400', async () => {
     const res = await upload(new File(['hello'], 'notes.txt', { type: '' }));
     expect(res.status).toBe(400);
