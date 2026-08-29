@@ -201,3 +201,67 @@ describe('排行榜', () => {
     expect(board.albums.some((x: any) => x.id === albumIdle)).toBe(false);
   });
 });
+
+describe('探店榜与点菜榜', () => {
+  let storeA = 0; let storeB = 0; let dishA = 0; let dishB = 0;
+
+  beforeAll(async () => {
+    const s1 = await env.DB.prepare("INSERT INTO stores (name, is_active) VALUES ('榜测店铺甲', 1)").run();
+    storeA = Number(s1.meta.last_row_id);
+    const s2 = await env.DB.prepare("INSERT INTO stores (name, is_active) VALUES ('榜测店铺乙', 1)").run();
+    storeB = Number(s2.meta.last_row_id);
+    const d1 = await env.DB.prepare("INSERT INTO dishes (name, is_active) VALUES ('榜测菜甲', 1)").run();
+    dishA = Number(d1.meta.last_row_id);
+    const d2 = await env.DB.prepare("INSERT INTO dishes (name, is_active) VALUES ('榜测菜乙', 1)").run();
+    dishB = Number(d2.meta.last_row_id);
+    // 店铺甲 2 赞（user + 另一个用户），店铺乙 1 赞；菜甲 2 想吃，菜乙 1 想吃
+    const other = await registerUser('lb_user2');
+    await toggleLike('store', storeA);
+    await SELF.fetch('http://x/api/likes/toggle', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${other.token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ target_type: 'store', target_id: storeA }),
+    });
+    await toggleLike('store', storeB);
+    await env.DB.prepare('INSERT INTO dish_wants (user_id, dish_id) VALUES (?, ?), (?, ?), (?, ?)')
+      .bind(user.id, dishA, other.id, dishA, user.id, dishB).run();
+  });
+
+  afterAll(async () => {
+    await env.DB.prepare("DELETE FROM notifications WHERE type = 'like' AND target_type = 'store'").run();
+    await env.DB.prepare("DELETE FROM likes WHERE target_type = 'store'").run();
+    await env.DB.prepare('DELETE FROM dish_wants WHERE dish_id IN (?, ?)').bind(dishA, dishB).run();
+    await env.DB.prepare('DELETE FROM dishes WHERE id IN (?, ?)').bind(dishA, dishB).run();
+    await env.DB.prepare('DELETE FROM stores WHERE id IN (?, ?)').bind(storeA, storeB).run();
+  });
+
+  it('探店榜按赞数排序，无赞不进榜；点菜榜按想吃数排序', async () => {
+    const res = await SELF.fetch('http://x/api/leaderboard');
+    expect(res.status).toBe(200);
+    const data = await res.json() as any;
+
+    const stores = data.stores as any[];
+    const sa = stores.find((s) => s.id === storeA);
+    const sb = stores.find((s) => s.id === storeB);
+    expect(sa).toMatchObject({ name: '榜测店铺甲', likes: 2, score: 10 });
+    expect(sb).toMatchObject({ name: '榜测店铺乙', likes: 1, score: 5 });
+    expect(stores.indexOf(sa)).toBeLessThan(stores.indexOf(sb));
+
+    const dishes = data.dishes as any[];
+    const da = dishes.find((d) => d.id === dishA);
+    const db_ = dishes.find((d) => d.id === dishB);
+    expect(da).toMatchObject({ name: '榜测菜甲', wants: 2 });
+    expect(db_).toMatchObject({ name: '榜测菜乙', wants: 1 });
+    expect(dishes.indexOf(da)).toBeLessThan(dishes.indexOf(db_));
+  });
+
+  it('下架的店/菜不进榜', async () => {
+    await env.DB.prepare('UPDATE stores SET is_active = 0 WHERE id = ?').bind(storeB).run();
+    await env.DB.prepare('UPDATE dishes SET is_active = 0 WHERE id = ?').bind(dishB).run();
+    const data = await (await SELF.fetch('http://x/api/leaderboard')).json() as any;
+    expect((data.stores as any[]).find((s) => s.id === storeB)).toBeUndefined();
+    expect((data.dishes as any[]).find((d) => d.id === dishB)).toBeUndefined();
+    await env.DB.prepare('UPDATE stores SET is_active = 1 WHERE id = ?').bind(storeB).run();
+    await env.DB.prepare('UPDATE dishes SET is_active = 1 WHERE id = ?').bind(dishB).run();
+  });
+});

@@ -357,7 +357,23 @@ content.get('/leaderboard', async (c) => {
        AND COALESCE(v.views, 0) + COALESCE(l.likes, 0) + COALESCE(ml.msg_likes, 0) > 0
      ORDER BY score DESC, t.id ASC LIMIT 10`
   ).bind('diary', 'diary').all();
-  return c.json({ albums, photos, diaries });
+  // 探店榜：按点赞（score = 赞*5，与既有口径一致；无浏览量）
+  const { results: stores } = await db.prepare(
+    `SELECT t.id, t.name,
+            COALESCE(l.likes, 0) AS likes, COALESCE(l.likes, 0) * 5 AS score
+     FROM stores t
+     LEFT JOIN (SELECT target_id, COALESCE(SUM(count), 0) AS likes FROM likes WHERE target_type = 'store' GROUP BY target_id) l ON l.target_id = t.id
+     WHERE t.is_active = 1 AND COALESCE(l.likes, 0) > 0
+     ORDER BY score DESC, t.id ASC LIMIT 10`
+  ).all();
+  // 点菜榜：按想吃数
+  const { results: dishes } = await db.prepare(
+    `SELECT t.id, t.name, COUNT(w.id) AS wants
+     FROM dishes t JOIN dish_wants w ON w.dish_id = t.id
+     WHERE t.is_active = 1
+     GROUP BY t.id ORDER BY wants DESC, t.id ASC LIMIT 10`
+  ).all();
+  return c.json({ albums, photos, diaries, stores, dishes });
 });
 
 content.get('/music/albums/:id', async (c) => {
