@@ -69,6 +69,7 @@ CREATE INDEX idx_notifications_unread ON notifications(recipient_type, recipient
 ```sql
 SELECT 1 FROM notifications
 WHERE type = 'like' AND actor_nickname = ? AND target_type = ? AND target_id IS ?
+  AND recipient_type = ? AND recipient_id = ?
   AND date(created_at, '+8 hours') = ?
 LIMIT 1
 ```
