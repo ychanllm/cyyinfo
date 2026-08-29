@@ -118,6 +118,19 @@ ap.post('/prize-records/:id/use', async (c) => {
   ).bind(c.req.param('id')).run();
   if (!r.meta.changes) return c.json({ detail: '记录不存在或已处理' }, 409);
   await logAudit(c.env.DB, 'prize_record_use', (c.get('admin') as { username: string }).username, `标记奖品记录#${c.req.param('id')}已使用`);
+  // 核销通知；失败不阻断
+  try {
+    const rec = await c.env.DB.prepare(
+      'SELECT r.user_id, p.name FROM prize_records r JOIN prizes p ON p.id = r.prize_id WHERE r.id = ?'
+    ).bind(c.req.param('id')).first<{ user_id: number; name: string }>();
+    if (rec) {
+      await c.env.DB.prepare(
+        'INSERT INTO notifications (recipient_type, recipient_id, type, message_id, actor_nickname, target_type, target_id, detail) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+      ).bind('user', rec.user_id, 'prize', null,
+        (c.get('admin') as { username: string }).username, 'points', null,
+        `你兑换的「${rec.name}」已被核销`).run();
+    }
+  } catch { /* 通知失败不影响核销 */ }
   return c.json({ ok: true });
 });
 
@@ -138,6 +151,17 @@ ap.post('/prize-records/:id/cancel', async (c) => {
   await c.env.DB.prepare(
     "INSERT INTO point_transactions (user_id, change, balance_after, type, ref_id) VALUES (?, ?, ?, 'cancel_refund', ?)"
   ).bind(rec.user_id, rec.points_spent, balance, rec.id).run();
+  // 取消退款通知；失败不阻断
+  try {
+    const prize = await c.env.DB.prepare(
+      'SELECT p.name FROM prize_records r JOIN prizes p ON p.id = r.prize_id WHERE r.id = ?'
+    ).bind(rec.id).first<{ name: string }>();
+    await c.env.DB.prepare(
+      'INSERT INTO notifications (recipient_type, recipient_id, type, message_id, actor_nickname, target_type, target_id, detail) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+    ).bind('user', rec.user_id, 'prize', null,
+      (c.get('admin') as { username: string }).username, 'points', null,
+      `你兑换的「${prize?.name ?? '奖品'}」已被取消，积分已退回`).run();
+  } catch { /* 通知失败不影响取消 */ }
   await logAudit(c.env.DB, 'prize_record_cancel', (c.get('admin') as { username: string }).username,
     `取消奖品记录#${rec.id}并退款 ${rec.points_spent}分`);
   return c.json({ ok: true });

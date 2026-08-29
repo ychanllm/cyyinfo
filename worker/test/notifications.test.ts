@@ -418,3 +418,46 @@ describe('通知范围：点赞', () => {
     await env.DB.prepare("DELETE FROM settings WHERE key = 'admin_like_user_id'").run();
   });
 });
+
+describe('通知范围：奖品核销/取消', () => {
+  const prizeNotifs = (uid: number) =>
+    env.DB.prepare("SELECT detail FROM notifications WHERE type = 'prize' AND recipient_type = 'user' AND recipient_id = ? ORDER BY id")
+      .bind(uid).all<{ detail: string }>().then((r) => r.results.map((x) => x.detail));
+  const mkRecord = async (uid: number, name: string) => {
+    const pid = Number((await env.DB.prepare(
+      'INSERT INTO prizes (name, points_cost) VALUES (?, 10)'
+    ).bind(name).run()).meta.last_row_id);
+    const rid = Number((await env.DB.prepare(
+      "INSERT INTO prize_records (user_id, prize_id, source, points_spent) VALUES (?, ?, 'redeem', 10)"
+    ).bind(uid, pid).run()).meta.last_row_id);
+    return { pid, rid };
+  };
+
+  it('站长核销 → 用户收到「已核销」；站长取消 → 「已取消，积分已退回」；用户自核销不通知', async () => {
+    const authH = { Authorization: `Bearer ${admin}` };
+    const base = (await prizeNotifs(alice.id)).length;
+
+    const r1 = await mkRecord(alice.id, '通知奖品A');
+    const use = await SELF.fetch(`http://x/api/admin/prize-records/${r1.rid}/use`, { method: 'POST', headers: authH });
+    expect(use.status).toBe(200);
+
+    const r2 = await mkRecord(alice.id, '通知奖品B');
+    const cancel = await SELF.fetch(`http://x/api/admin/prize-records/${r2.rid}/cancel`, { method: 'POST', headers: authH });
+    expect(cancel.status).toBe(200);
+
+    const r3 = await mkRecord(alice.id, '通知奖品C');
+    const selfUse = await SELF.fetch(`http://x/api/my/prizes/${r3.rid}/use`, {
+      method: 'POST', headers: { Authorization: `Bearer ${alice.token}` },
+    });
+    expect(selfUse.status).toBe(200);
+
+    const details = await prizeNotifs(alice.id);
+    expect(details.length).toBe(base + 2); // 自核销不产生第三条
+    expect(details).toContain('你兑换的「通知奖品A」已被核销');
+    expect(details).toContain('你兑换的「通知奖品B」已被取消，积分已退回');
+
+    // 清理（prize_records 有 prizes 外键，先删记录）
+    await env.DB.prepare('DELETE FROM prize_records WHERE prize_id IN (?, ?, ?)').bind(r1.pid, r2.pid, r3.pid).run();
+    await env.DB.prepare('DELETE FROM prizes WHERE id IN (?, ?, ?)').bind(r1.pid, r2.pid, r3.pid).run();
+  });
+});
