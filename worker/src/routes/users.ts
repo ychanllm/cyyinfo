@@ -21,7 +21,9 @@ interface UserRow {
 }
 
 users.post('/auth/register', async (c) => {
-  if (!await enforceRateLimit(c.env.REGISTER_RATE_LIMITER, { limit: 30, windowSec: 900, key: `register:${clientIp(c.req.raw)}` })) {
+  // 本地限流默认 30 次/15 分钟；测试环境可用 REGISTER_RATE_LIMIT 调高（全量测试共享同一 isolate 的内存桶）
+  const registerLimit = Number(c.env.REGISTER_RATE_LIMIT) || 30;
+  if (!await enforceRateLimit(c.env.REGISTER_RATE_LIMITER, { limit: registerLimit, windowSec: 900, key: `register:${clientIp(c.req.raw)}` })) {
     return c.json({ detail: '尝试过于频繁，请稍后再试' }, 429);
   }
   // 站点启用口令时，注册前必须先通过口令（guest/admin/user JWT 均可）
