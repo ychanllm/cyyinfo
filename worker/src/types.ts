@@ -15,6 +15,7 @@ export interface Variables {
   admin: { id: number; username: string };
   user: { id: number; username: string };
   liker: { id: number; username: string };
+  recipient: { type: 'user' | 'admin'; id: number };
 }
 
 export type AppEnv = { Bindings: Env; Variables: Variables };

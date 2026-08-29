@@ -115,3 +115,50 @@ describe('通知生成', () => {
     expect(await notifCount('admin', 1)).toBe(before);
   });
 });
+
+const getUnread = (token: string) =>
+  SELF.fetch('http://x/api/notifications/unread', { headers: { Authorization: `Bearer ${token}` } });
+
+const markRead = (token: string, body: Record<string, unknown> = {}) =>
+  SELF.fetch('http://x/api/notifications/read', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+describe('通知查询与已读', () => {
+  it('无 token → 401', async () => {
+    expect((await SELF.fetch('http://x/api/notifications/unread')).status).toBe(401);
+    expect((await markRead('')).status).toBe(401);
+  });
+
+  it('站长 unread 返回 count 与 items（含 excerpt）', async () => {
+    // Task 3 的用例已给 admin#1 生成过未读通知
+    const res = await getUnread(admin);
+    expect(res.status).toBe(200);
+    const data = (await res.json()) as any;
+    expect(data.count).toBeGreaterThan(0);
+    expect(data.items[0]).toHaveProperty('actor_nickname');
+    expect(data.items[0]).toHaveProperty('excerpt');
+    expect(data.items[0]).toHaveProperty('target_type');
+  });
+
+  it('标记单条已读，count 减少；不能标记他人通知', async () => {
+    const before = ((await (await getUnread(admin)).json()) as any).count;
+    const adminItem = ((await (await getUnread(admin)).json()) as any).items[0];
+    // alice 尝试标记站长的通知 → 无效
+    await markRead(alice.token, { ids: [adminItem.id] });
+    expect(((await (await getUnread(admin)).json()) as any).count).toBe(before);
+    // 站长标记自己这条
+    const res = await markRead(admin, { ids: [adminItem.id] });
+    expect(res.status).toBe(200);
+    expect(((await (await getUnread(admin)).json()) as any).count).toBe(before - 1);
+  });
+
+  it('不传 ids 标记全部已读', async () => {
+    await markRead(admin);
+    expect(((await (await getUnread(admin)).json()) as any).count).toBe(0);
+    // 同理清掉 alice 的，避免影响后续全量测试的其他文件断言
+    await markRead(alice.token);
+  });
+});
