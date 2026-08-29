@@ -218,6 +218,8 @@ describe('review 修复回归', () => {
 
 // 共享存储下本文件的日记评论会污染 messages.test 的 diary#1 断言，结束时清理（先删通知再删留言，尊重外键）
 afterAll(async () => {
+  // 兜底：清掉本文件产生的 like/prize/thread 通知（message_id 为 NULL，不被留言级联删除覆盖）
+  await env.DB.prepare("DELETE FROM notifications WHERE type IN ('like','prize','thread')").run();
   await env.DB.prepare(
     'DELETE FROM notifications WHERE message_id IN (SELECT id FROM messages WHERE target_type = ? AND target_id = ?)'
   ).bind('diary', diaryId).run();
@@ -416,6 +418,34 @@ describe('通知范围：点赞', () => {
     // 清理
     await likeToggle(admin, 'diary', did);
     await env.DB.prepare("DELETE FROM settings WHERE key = 'admin_like_user_id'").run();
+  });
+
+  it('跨接收人去重：同一人当天赞不同作者的 site 评论，各自都收到通知', async () => {
+    const carol = await registerUser('notif_carol');
+    // bob 与 carol 各发一条待审核 site 留言（跳转目标均为 site/NULL，旧去重键在此碰撞）
+    await postMsg({ nickname: '鲍勃', content: '站点被赞-bob', target_type: 'site' }, bob.token);
+    await postMsg({ nickname: '卡罗尔', content: '站点被赞-carol', target_type: 'site' }, carol.token);
+    const bobMsg = await env.DB.prepare(
+      "SELECT id FROM messages WHERE content = '站点被赞-bob'"
+    ).first<{ id: number }>();
+    const carolMsg = await env.DB.prepare(
+      "SELECT id FROM messages WHERE content = '站点被赞-carol'"
+    ).first<{ id: number }>();
+
+    const baseBob = await likeNotifs('user', bob.id);
+    const baseCarol = await likeNotifs('user', carol.id);
+    await likeToggle(alice.token, 'message', bobMsg!.id);
+    expect(await likeNotifs('user', bob.id)).toBe(baseBob + 1);
+    // 第二条接收人不同，去重不再误吞
+    await likeToggle(alice.token, 'message', carolMsg!.id);
+    expect(await likeNotifs('user', carol.id)).toBe(baseCarol + 1);
+
+    // 清理：取消点赞 + admin DELETE 这两条 site 留言（级联清 notifications）
+    const authH = { Authorization: `Bearer ${admin}` };
+    await likeToggle(alice.token, 'message', bobMsg!.id);
+    await likeToggle(alice.token, 'message', carolMsg!.id);
+    await SELF.fetch(`http://x/api/admin/messages/${bobMsg!.id}`, { method: 'DELETE', headers: authH });
+    await SELF.fetch(`http://x/api/admin/messages/${carolMsg!.id}`, { method: 'DELETE', headers: authH });
   });
 });
 

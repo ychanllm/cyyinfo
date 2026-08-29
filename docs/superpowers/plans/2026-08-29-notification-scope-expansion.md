@@ -18,7 +18,7 @@
 - 测试串行共享 D1/R2：独立 target_id（用 9500+ 号段）、独立 IP 桶（`10.13.N.1`）、增量断言、产生的待审核 site/photo 留言用 admin DELETE 清理（删除已级联清 notifications）。
 - 站点锁定中文，前端文案直接写中文；`web/src/App.vue` 等文件含 CRLF 行尾，Edit 时注意。
 - 仓库根 `D:\vibeProject\kimiProject\cyyinfo`；Worker 命令在 `worker/`、前端在 `web/` 下执行。
-- 点赞去重口径：同一操作者（actor_nickname）对同一跳转目标当天（北京时间，`date(created_at, '+8 hours')`）只通知一次。
+- 点赞去重口径：同一操作者（actor_nickname）对同一接收人（recipient_type + recipient_id）的同一跳转目标当天（北京时间，`date(created_at, '+8 hours')`）只通知一次。
 
 ---
 

@@ -64,7 +64,7 @@ CREATE INDEX idx_notifications_unread ON notifications(recipient_type, recipient
 ### 2. 点赞（`worker/src/routes/likes.ts` toggle / burst）
 
 - 触发点：toggle 结果 `liked=true`；burst 实际增量 `applied > 0`。
-- 去重：插入前查当天（北京时间）是否已有同 actor + 同目标（解析后的跳转目标）的 like 通知，有则跳过：
+- 去重：插入前查当天（北京时间）是否已有同 actor + 同目标（解析后的跳转目标）的 like 通知，有则跳过。去重键含接收人（同一人当天对同一接收人的同一目标只通知一次）：
 
 ```sql
 SELECT 1 FROM notifications

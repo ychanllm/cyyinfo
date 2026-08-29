@@ -65,7 +65,7 @@ async function optionalUserId(c: Context<AppEnv>): Promise<number | null> {
   return payload ? resolveLikerId(c.env.DB, payload) : null;
 }
 
-// 点赞通知：同一操作者对同一跳转目标当天（北京时间）首次点赞才通知；失败不阻断点赞
+// 点赞通知：同一操作者对同一接收人的同一跳转目标当天（北京时间）首次点赞才通知；失败不阻断点赞
 async function notifyLike(
   c: Context<AppEnv>,
   liker: { id: number; username: string; role: string; sub: number },
@@ -109,11 +109,11 @@ async function notifyLike(
     } else {
       return;
     }
-    // 当天（北京时间）同操作者同跳转目标已通知过则跳过
+    // 当天（北京时间）同操作者对同接收人的同跳转目标已通知过则跳过
     const dup = await db.prepare(
       `SELECT 1 FROM notifications WHERE type = 'like' AND actor_nickname = ? AND target_type = ? AND target_id IS ?
-       AND date(created_at, '+8 hours') = ? LIMIT 1`
-    ).bind(liker.username, jump.type, jump.id, todayCN()).first();
+       AND recipient_type = ? AND recipient_id = ? AND date(created_at, '+8 hours') = ? LIMIT 1`
+    ).bind(liker.username, jump.type, jump.id, recipient.type, recipient.id, todayCN()).first();
     if (dup) return;
     await db.prepare(
       'INSERT INTO notifications (recipient_type, recipient_id, type, message_id, actor_nickname, target_type, target_id, detail) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
