@@ -6,6 +6,7 @@ import { api, getUserToken } from '../api';
 import { loadSiteStatus } from '../site-status';
 import { localize } from '../i18n';
 import { me, loadMe } from '../me';
+import NotificationBell from './NotificationBell.vue';
 
 const { t } = useI18n();
 const route = useRoute();
@@ -54,6 +55,7 @@ const links = computed(() => [
         <router-link :to="localize('/')" class="brand">{{ siteName }}</router-link>
       </div>
       <div class="right">
+        <NotificationBell />
         <nav class="links">
           <router-link
             v-for="l in links"
