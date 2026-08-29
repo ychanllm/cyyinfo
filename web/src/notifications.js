@@ -1,7 +1,7 @@
 import { ref } from 'vue';
 import { api, getUserToken, getAdminToken } from './api';
 
-// 未读通知共享状态：NavBar 红点与进入弹窗共用，避免重复请求（沿用 me.js 的模块级 ref 模式）
+// 未读通知共享状态：NavBar 红点与进入弹窗共用同一份数据（各自触发请求，共享的是状态而非请求去重；沿用 me.js 的模块级 ref 模式）
 export const unreadCount = ref(0);
 export const unreadItems = ref([]);
 

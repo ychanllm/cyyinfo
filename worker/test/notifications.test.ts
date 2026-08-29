@@ -1,5 +1,5 @@
 import { SELF, env } from 'cloudflare:test';
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { applyMigrations, adminToken, registerUser } from './helpers';
 
 let admin: string;
@@ -161,4 +161,65 @@ describe('通知查询与已读', () => {
     // 同理清掉 alice 的，避免影响后续全量测试的其他文件断言
     await markRead(alice.token);
   });
+});
+
+describe('review 修复回归', () => {
+  it('站长删除产生过通知的留言 → 删除成功且关联通知一并清除', async () => {
+    // alice 评论日记 → 站长收到 comment 通知
+    const res = await postMsg(
+      { nickname: '爱丽丝', content: '通知-待删除', target_type: 'diary', target_id: diaryId },
+      alice.token,
+    );
+    expect(res.status).toBe(201);
+    const msg = await env.DB.prepare(
+      "SELECT id FROM messages WHERE content = '通知-待删除'"
+    ).first<{ id: number }>();
+    const notif = await env.DB.prepare(
+      'SELECT id FROM notifications WHERE message_id = ?'
+    ).bind(msg!.id).first<{ id: number }>();
+    expect(notif).toBeTruthy();
+    // 站长删除该留言（此前会因 notifications 外键报错）
+    const del = await SELF.fetch(`http://x/api/admin/messages/${msg!.id}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${admin}` },
+    });
+    expect(del.status).toBe(200);
+    expect(await env.DB.prepare('SELECT id FROM messages WHERE id = ?').bind(msg!.id).first()).toBeNull();
+    expect(await env.DB.prepare('SELECT id FROM notifications WHERE message_id = ?').bind(msg!.id).first()).toBeNull();
+  });
+
+  it('未审核的 site 回复 → 通知存在但 excerpt 为 null', async () => {
+    const authH = { Authorization: `Bearer ${admin}` };
+    // alice 发 site 顶级评论（待审核），站长审核通过后才能被回复
+    const top = await postMsg({ nickname: '爱丽丝', content: '通知-站点楼', target_type: 'site' }, alice.token);
+    expect(top.status).toBe(202);
+    const pending = await (await SELF.fetch('http://x/api/admin/messages?pending=1', { headers: authH })).json() as any[];
+    const siteTop = pending.find((m) => m.content === '通知-站点楼');
+    await SELF.fetch(`http://x/api/admin/messages/${siteTop.id}/approve`, { method: 'POST', headers: authH });
+    // bob 回复（待审核 202），但仍会生成给 alice 的 reply 通知
+    const reply = await postMsg(
+      { nickname: '鲍勃', content: '通知-站点待审回复', target_type: 'site', parent_id: siteTop.id },
+      bob.token,
+    );
+    expect(reply.status).toBe(202);
+    // alice 的未读里通知存在，但 excerpt 不得泄露未审核内容
+    const data = (await (await getUnread(alice.token)).json()) as any;
+    const item = data.items.find((n: any) => n.type === 'reply' && n.actor_nickname === '鲍勃' && n.target_type === 'site');
+    expect(item).toBeTruthy();
+    expect(item.excerpt).toBeNull();
+    // 清理：先删回复再删顶级，避免共享存储影响其他测试文件
+    const replyRow = await env.DB.prepare(
+      "SELECT id FROM messages WHERE content = '通知-站点待审回复'"
+    ).first<{ id: number }>();
+    await SELF.fetch(`http://x/api/admin/messages/${replyRow!.id}`, { method: 'DELETE', headers: authH });
+    await SELF.fetch(`http://x/api/admin/messages/${siteTop.id}`, { method: 'DELETE', headers: authH });
+  });
+});
+
+// 共享存储下本文件的日记评论会污染 messages.test 的 diary#1 断言，结束时清理（先删通知再删留言，尊重外键）
+afterAll(async () => {
+  await env.DB.prepare(
+    'DELETE FROM notifications WHERE message_id IN (SELECT id FROM messages WHERE target_type = ? AND target_id = ?)'
+  ).bind('diary', diaryId).run();
+  await env.DB.prepare('DELETE FROM messages WHERE target_type = ? AND target_id = ?').bind('diary', diaryId).run();
 });

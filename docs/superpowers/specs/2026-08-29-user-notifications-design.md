@@ -64,7 +64,7 @@ CREATE INDEX idx_notifications_unread
 
 - 放进 `NavBar.vue` 右侧 `.right` 区域（用户头像旁），纯 CSS 小红圆点，不新增 icon。
 - 仅在 `me`（`web/src/me.js`）或 admin token 存在时显示；有未读才显示红点。
-- 点击红点 → 下拉列表展示未读通知摘要（"xx 回复了你的评论：…" / "xx 评论了你的日记"），点击条目跳转 `/diary/:target_id` 并标记该条已读；底部"全部已读"。
+- 点击红点 → 下拉列表展示未读通知摘要（"xx 回复了你的评论：…" / "xx 评论了你的日记"），点击条目跳转 `/diaries/:target_id` 并标记该条已读；底部"全部已读"。
 
 ### 进入小站弹窗
 

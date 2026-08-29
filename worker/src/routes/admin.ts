@@ -659,6 +659,8 @@ admin.post('/messages/:id/hide', async (c) => {
 });
 
 admin.delete('/messages/:id', async (c) => {
+  // 先清理 notifications 引用，避免外键约束报错
+  await c.env.DB.prepare('DELETE FROM notifications WHERE message_id = ?').bind(c.req.param('id')).run();
   await c.env.DB.prepare('DELETE FROM messages WHERE id = ?').bind(c.req.param('id')).run();
   await logAudit(c.env.DB, 'message_review', (c.get('admin') as { username: string }).username, `删除留言#${c.req.param('id')}`);
   return c.json({ ok: true });
