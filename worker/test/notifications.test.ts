@@ -223,3 +223,25 @@ afterAll(async () => {
   ).bind('diary', diaryId).run();
   await env.DB.prepare('DELETE FROM messages WHERE target_type = ? AND target_id = ?').bind('diary', diaryId).run();
 });
+
+describe('通知表扩展（0023）', () => {
+  it('message_id 可空 + detail 透出：prize 类通知在 unread 可见且 excerpt 为 null', async () => {
+    await env.DB.prepare(
+      "INSERT INTO notifications (recipient_type, recipient_id, type, message_id, actor_nickname, target_type, target_id, detail) VALUES ('user', ?, 'prize', NULL, '站长', 'points', NULL, '你兑换的「测试」已被核销')"
+    ).bind(alice.id).run();
+    const data = (await (await getUnread(alice.token)).json()) as any;
+    const item = data.items.find((n: any) => n.type === 'prize');
+    expect(item).toBeTruthy();
+    expect(item.detail).toBe('你兑换的「测试」已被核销');
+    expect(item.excerpt).toBeNull();
+    await markRead(alice.token);
+  });
+
+  it('旧 reply/comment 数据迁移后完好', async () => {
+    // 本文件前面的用例生成的通知行仍在（type 仍在 CHECK 集合内）
+    const row = await env.DB.prepare(
+      "SELECT COUNT(*) AS n FROM notifications WHERE type IN ('reply','comment')"
+    ).first<{ n: number }>();
+    expect(row!.n).toBeGreaterThan(0);
+  });
+});

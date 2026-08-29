@@ -25,14 +25,15 @@ async function recipientAuth(c: Context<AppEnv>, next: Next) {
   await next();
 }
 
-// 未读通知：count + 最近 20 条摘要（excerpt 为被回复/被评论内容的截断，未审核内容不返回）
+// 未读通知：count + 最近 20 条摘要（detail 类直通 detail；评论类 excerpt 截断且未审核不返回）
 notifications.get('/notifications/unread', recipientAuth, async (c) => {
   const r = c.get('recipient');
   const db = c.env.DB;
   const { results } = await db.prepare(
-    `SELECT n.id, n.type, n.actor_nickname, n.target_type, n.target_id, n.created_at,
-            CASE WHEN m.is_approved = 1 THEN substr(m.content, 1, 60) END AS excerpt
-     FROM notifications n JOIN messages m ON m.id = n.message_id
+    `SELECT n.id, n.type, n.actor_nickname, n.target_type, n.target_id, n.detail, n.created_at,
+            CASE WHEN n.detail IS NOT NULL THEN NULL
+                 WHEN m.is_approved = 1 THEN substr(m.content, 1, 60) END AS excerpt
+     FROM notifications n LEFT JOIN messages m ON m.id = n.message_id
      WHERE n.recipient_type = ? AND n.recipient_id = ? AND n.is_read = 0
      ORDER BY n.id DESC LIMIT 20`
   ).bind(r.type, r.id).all();
