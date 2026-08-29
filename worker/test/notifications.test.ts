@@ -311,3 +311,110 @@ describe('通知范围：评论类扩展', () => {
     expect(await notifCount('user', alice.id)).toBe(guestBefore + 1);
   });
 });
+
+describe('通知范围：点赞', () => {
+  const likeToggle = (token: string, target_type: string, target_id: number) =>
+    SELF.fetch('http://x/api/likes/toggle', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ target_type, target_id }),
+    });
+  const likeNotifs = (rtype: string, rid: number) =>
+    env.DB.prepare("SELECT COUNT(*) AS n FROM notifications WHERE type = 'like' AND recipient_type = ? AND recipient_id = ?")
+      .bind(rtype, rid).first<{ n: number }>().then((r) => r?.n ?? 0);
+
+  it('首次赞日记通知站长；取消再赞当天不重复；burst 连赞也只一次', async () => {
+    const mk = async (title: string) => {
+      const res = await SELF.fetch('http://x/api/admin/diaries', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${admin}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title }),
+      });
+      return ((await res.json()) as any).id as number;
+    };
+    const d1 = await mk('点赞通知日记一');
+    const d2 = await mk('点赞通知日记二');
+
+    const base = await likeNotifs('admin', 1);
+    // toggle 首次赞 → +1
+    await likeToggle(alice.token, 'diary', d1);
+    expect(await likeNotifs('admin', 1)).toBe(base + 1);
+    const n = await env.DB.prepare(
+      "SELECT actor_nickname, target_type, target_id, detail FROM notifications WHERE type = 'like' ORDER BY id DESC"
+    ).first<any>();
+    expect(n).toMatchObject({ actor_nickname: 'notif_alice', target_type: 'diary', target_id: d1, detail: '日记' });
+
+    // 取消再赞 → 当天不重复
+    await likeToggle(alice.token, 'diary', d1);
+    await likeToggle(alice.token, 'diary', d1);
+    expect(await likeNotifs('admin', 1)).toBe(base + 1);
+
+    // burst 首次 → +1；再次 burst → 不重复
+    const burst = (id: number, delta: number) =>
+      SELF.fetch('http://x/api/likes/burst', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${alice.token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ target_type: 'diary', target_id: id, delta }),
+      });
+    await burst(d2, 3);
+    expect(await likeNotifs('admin', 1)).toBe(base + 2);
+    await burst(d2, 2);
+    expect(await likeNotifs('admin', 1)).toBe(base + 2);
+
+    // 清理点赞
+    await likeToggle(alice.token, 'diary', d1);
+    await env.DB.prepare("DELETE FROM likes WHERE target_type = 'diary' AND target_id IN (?, ?)").bind(d1, d2).run();
+  });
+
+  it('评论被赞通知评论作者；游客评论被赞不通知；自己赞自己不通知', async () => {
+    // bob 在独立日记发评论（免审核立即可见）
+    const create = await SELF.fetch('http://x/api/admin/diaries', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${admin}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: '评论点赞日记' }),
+    });
+    const did = ((await create.json()) as any).id;
+    await postMsg({ nickname: '鲍勃', content: '赞我这条', target_type: 'diary', target_id: did }, bob.token);
+    await postMsg({ nickname: '路人', content: '游客被赞', target_type: 'diary', target_id: did });
+    const list = await (await SELF.fetch(`http://x/api/messages?target_type=diary&target_id=${did}`)).json() as any[];
+    const bobMsg = list.find((m) => m.content === '赞我这条');
+    const guestMsg = list.find((m) => m.content === '游客被赞');
+
+    const baseBob = await likeNotifs('user', bob.id);
+    await likeToggle(alice.token, 'message', bobMsg.id);
+    expect(await likeNotifs('user', bob.id)).toBe(baseBob + 1);
+
+    // 游客评论被赞：全表 like 通知数不变
+    const allBefore = await env.DB.prepare("SELECT COUNT(*) AS n FROM notifications WHERE type = 'like'").first<{ n: number }>();
+    await likeToggle(alice.token, 'message', guestMsg.id);
+    const allAfter = await env.DB.prepare("SELECT COUNT(*) AS n FROM notifications WHERE type = 'like'").first<{ n: number }>();
+    expect(allAfter!.n).toBe(allBefore!.n);
+
+    // bob 自己赞自己的评论 → 不通知
+    await likeToggle(bob.token, 'message', bobMsg.id);
+    expect(await likeNotifs('user', bob.id)).toBe(baseBob + 1);
+
+    // 清理
+    await likeToggle(alice.token, 'message', bobMsg.id);
+    await likeToggle(alice.token, 'message', guestMsg.id);
+    await likeToggle(bob.token, 'message', bobMsg.id);
+  });
+
+  it('站长赞自己的日记不通知自己', async () => {
+    // 配置管理员点赞归属用户（resolveLikerId 需要）
+    await env.DB.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('admin_like_user_id', ?)")
+      .bind(String(alice.id)).run();
+    const base = await likeNotifs('admin', 1);
+    const create = await SELF.fetch('http://x/api/admin/diaries', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${admin}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: '站长自赞日记' }),
+    });
+    const did = ((await create.json()) as any).id;
+    await likeToggle(admin, 'diary', did);
+    expect(await likeNotifs('admin', 1)).toBe(base);
+    // 清理
+    await likeToggle(admin, 'diary', did);
+    await env.DB.prepare("DELETE FROM settings WHERE key = 'admin_like_user_id'").run();
+  });
+});

@@ -51,8 +51,9 @@ async function likerAuth(c: Context<AppEnv>, next: Next) {
   }
   const likerId = await resolveLikerId(c.env.DB, payload);
   if (!likerId) return c.json({ detail: '管理员点赞需先在后台「设置」指定点赞归属用户' }, 400);
-  // liker.id 是点赞归属（管理员时为归属用户）；liker.username 是实际操作者（写审计日志用）
-  c.set('liker', { id: likerId, username: payload.username as string });
+  // liker.id 是点赞归属（管理员时为归属用户）；liker.username 是实际操作者（写审计日志用）；
+  // role/sub 供通知逻辑识别"站长赞自己的内容"
+  c.set('liker', { id: likerId, username: payload.username as string, role: payload.role as string, sub: Number(payload.sub) });
   await next();
 }
 
@@ -64,9 +65,65 @@ async function optionalUserId(c: Context<AppEnv>): Promise<number | null> {
   return payload ? resolveLikerId(c.env.DB, payload) : null;
 }
 
+// 点赞通知：同一操作者对同一跳转目标当天（北京时间）首次点赞才通知；失败不阻断点赞
+async function notifyLike(
+  c: Context<AppEnv>,
+  liker: { id: number; username: string; role: string; sub: number },
+  target: { type: string; id: number },
+) {
+  try {
+    const db = c.env.DB;
+    let recipient: { type: 'user' | 'admin'; id: number } | null = null;
+    let jump: { type: string; id: number | null } = { type: target.type, id: target.id };
+    let detail = '';
+    if (target.type === 'diary') {
+      const d = await db.prepare('SELECT author_id FROM diaries WHERE id = ?')
+        .bind(target.id).first<{ author_id: number }>();
+      if (!d) return;
+      if (liker.role === 'admin' && liker.sub === d.author_id) return; // 站长赞自己日记
+      recipient = { type: 'admin', id: d.author_id };
+      detail = '日记';
+    } else if (target.type === 'album') {
+      const a = await db.prepare('SELECT id FROM albums WHERE id = ?').bind(target.id).first();
+      const admin = await db.prepare('SELECT id FROM admin_users LIMIT 1').first<{ id: number }>();
+      if (!a || !admin) return;
+      if (liker.role === 'admin') return; // 站长赞自己相册
+      recipient = { type: 'admin', id: admin.id };
+      detail = '相册';
+    } else if (target.type === 'photo') {
+      const p = await db.prepare('SELECT album_id FROM photos WHERE id = ?')
+        .bind(target.id).first<{ album_id: number }>();
+      const admin = await db.prepare('SELECT id FROM admin_users LIMIT 1').first<{ id: number }>();
+      if (!p || !admin) return;
+      if (liker.role === 'admin') return; // 站长赞自己照片
+      recipient = { type: 'admin', id: admin.id };
+      jump = { type: 'album', id: p.album_id }; // 前端跳转到所在相册
+      detail = '照片';
+    } else if (target.type === 'message') {
+      const m = await db.prepare('SELECT user_id, target_type, target_id FROM messages WHERE id = ?')
+        .bind(target.id).first<{ user_id: number | null; target_type: string; target_id: number | null }>();
+      if (!m?.user_id || m.user_id === liker.id) return; // 游客评论/自己赞自己不通知
+      recipient = { type: 'user', id: m.user_id };
+      jump = { type: m.target_type, id: m.target_id };
+      detail = '评论';
+    } else {
+      return;
+    }
+    // 当天（北京时间）同操作者同跳转目标已通知过则跳过
+    const dup = await db.prepare(
+      `SELECT 1 FROM notifications WHERE type = 'like' AND actor_nickname = ? AND target_type = ? AND target_id IS ?
+       AND date(created_at, '+8 hours') = ? LIMIT 1`
+    ).bind(liker.username, jump.type, jump.id, todayCN()).first();
+    if (dup) return;
+    await db.prepare(
+      'INSERT INTO notifications (recipient_type, recipient_id, type, message_id, actor_nickname, target_type, target_id, detail) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+    ).bind(recipient.type, recipient.id, 'like', null, liker.username, jump.type, jump.id, detail).run();
+  } catch { /* 通知失败不影响点赞 */ }
+}
+
 // 点赞/取消点赞（注册用户或配置了归属用户的管理员）
 likes.post('/toggle', likerAuth, async (c) => {
-  const me = c.get('liker') as { id: number; username: string };
+  const me = c.get('liker') as { id: number; username: string; role: string; sub: number };
   const body = await c.req.json<{ target_type?: string; target_id?: number }>()
     .catch((): { target_type?: string; target_id?: number } => ({}));
   const target = parseTarget(body.target_type, body.target_id);
@@ -83,6 +140,7 @@ likes.post('/toggle', likerAuth, async (c) => {
     await db.prepare('INSERT INTO likes (user_id, target_type, target_id) VALUES (?, ?, ?)')
       .bind(me.id, target.type, target.id).run();
     liked = true;
+    await notifyLike(c, me, target);
   }
   await logAudit(db, liked ? 'like' : 'unlike', me.username, `${liked ? '点赞' : '取消点赞'} ${target.type}#${target.id}`);
   return c.json({ liked, count: await countOf(db, target.type, target.id) });
@@ -90,7 +148,7 @@ likes.post('/toggle', likerAuth, async (c) => {
 
 // 连赞：同一用户可累加多个赞（注册用户或配置了归属用户的管理员），每人每天单目标上限 50
 likes.post('/burst', likerAuth, async (c) => {
-  const me = c.get('liker') as { id: number; username: string };
+  const me = c.get('liker') as { id: number; username: string; role: string; sub: number };
   const body = await c.req.json<{ target_type?: string; target_id?: number; delta?: number }>()
     .catch((): { target_type?: string; target_id?: number; delta?: number } => ({}));
   const target = parseTarget(body.target_type, body.target_id);
@@ -127,6 +185,7 @@ likes.post('/burst', likerAuth, async (c) => {
   // 额度耗尽（实际增量为 0）时不写「连赞 +0」审计
   if (applied > 0) {
     await logAudit(db, 'like_burst', me.username, `连赞 +${applied} ${target.type}#${target.id}`);
+    await notifyLike(c, me, target);
   }
   return c.json({
     liked: true,

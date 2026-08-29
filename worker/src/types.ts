@@ -15,7 +15,7 @@ export interface Env {
 export interface Variables {
   admin: { id: number; username: string };
   user: { id: number; username: string };
-  liker: { id: number; username: string };
+  liker: { id: number; username: string; role: string; sub: number };
   recipient: { type: 'user' | 'admin'; id: number };
 }
 
