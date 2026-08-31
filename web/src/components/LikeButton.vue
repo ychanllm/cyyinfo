@@ -34,6 +34,7 @@ const remainingDate = ref(null); // remaining 对应的北京时间当日日期�
 const pendingDelta = ref(0);
 let flushTimer = null;
 let flushing = false;
+let failStreak = 0; // flush 连续失败次数，达到上限才回滚乐观增量
 
 const today = () => new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 10);
 
@@ -85,11 +86,21 @@ async function flush() {
       remaining.value = data.daily_remaining;
       remainingDate.value = today();
     }
-    emit('update', data); // 服务端权威计数（含他人点赞与每日上限钳制）
+    failStreak = 0;
+    // 服务端 count 只含已 flush 的部分；加上尚未发送的 pending，
+    // 否则显示值会从乐观增量回落（表现为点赞数回跳、不连续）
+    emit('update', { ...data, count: data.count + pendingDelta.value });
   } catch {
-    // 失败回滚乐观增量与本地剩余
+    // 失败：本次 delta 重新排队等待重试，不动乐观显示；连续失败 3 次才回滚
+    pendingDelta.value += delta;
     if (remaining.value !== null) remaining.value += delta;
-    emit('update', { liked: props.liked, count: Math.max(0, props.count - delta), daily_remaining: left() });
+    failStreak += 1;
+    if (failStreak >= 3) {
+      const lost = pendingDelta.value;
+      pendingDelta.value = 0;
+      failStreak = 0;
+      emit('update', { liked: props.liked, count: Math.max(0, props.count - lost), daily_remaining: left() });
+    }
   } finally {
     flushing = false;
     if (pendingDelta.value) scheduleFlush();
