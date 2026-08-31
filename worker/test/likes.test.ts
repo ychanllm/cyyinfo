@@ -290,3 +290,40 @@ describe('店铺点赞（store）', () => {
     await env.DB.prepare('DELETE FROM stores WHERE id = ?').bind(storeId).run();
   });
 });
+
+describe('点赞审计日志', () => {
+  it('日记目标的审计详情显示日记标题而非 diary#id', async () => {
+    const admin = await adminToken();
+    const create = await SELF.fetch('http://x/api/admin/diaries', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${admin}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: '审计标题日记' }),
+    });
+    const diaryId = ((await create.json()) as any).id;
+
+    await toggle(alice, 'diary', diaryId);
+    const likeLog = await env.DB.prepare(
+      "SELECT detail FROM audit_logs WHERE type = 'like' ORDER BY id DESC"
+    ).first<{ detail: string }>();
+    expect(likeLog?.detail).toBe(`点赞 日记「审计标题日记」`);
+
+    await SELF.fetch('http://x/api/likes/burst', {
+      method: 'POST',
+      headers: auth(alice),
+      body: JSON.stringify({ target_type: 'diary', target_id: diaryId, delta: 2 }),
+    });
+    const burstLog = await env.DB.prepare(
+      "SELECT detail FROM audit_logs WHERE type = 'like_burst' ORDER BY id DESC"
+    ).first<{ detail: string }>();
+    expect(burstLog?.detail).toBe(`连赞 +2 日记「审计标题日记」`);
+
+    // 清理
+    await toggle(alice, 'diary', diaryId); // toggle 走取消（记录「取消点赞」）
+    await env.DB.prepare("DELETE FROM audit_logs WHERE detail LIKE '%审计标题日记%'").run();
+    await env.DB.prepare("DELETE FROM notifications WHERE type = 'like' AND target_type = 'diary' AND target_id = ?").bind(diaryId).run();
+    await SELF.fetch(`http://x/api/admin/diaries/${diaryId}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${admin}` },
+    });
+  });
+});

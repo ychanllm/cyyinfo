@@ -29,6 +29,16 @@ async function countOf(db: D1Database, type: string, id: number): Promise<number
   return row?.n ?? 0;
 }
 
+// 审计日志里的目标描述：日记显示标题（更醒目），其他类型保持 type#id
+async function targetLabel(db: D1Database, target: { type: string; id: number }): Promise<string> {
+  if (target.type === 'diary') {
+    const d = await db.prepare('SELECT title FROM diaries WHERE id = ?')
+      .bind(target.id).first<{ title: string }>();
+    if (d?.title) return `日记「${d.title}」`;
+  }
+  return `${target.type}#${target.id}`;
+}
+
 // 解析点赞用户 id：注册用户 → 自身；管理员 → 后台「设置」里配置的点赞归属用户（settings.admin_like_user_id）
 async function resolveLikerId(db: D1Database, payload: Record<string, unknown>): Promise<number | null> {
   if (payload.role === 'user') return payload.sub as number;
@@ -149,7 +159,7 @@ likes.post('/toggle', likerAuth, async (c) => {
     liked = true;
     await notifyLike(c, me, target);
   }
-  await logAudit(db, liked ? 'like' : 'unlike', me.username, `${liked ? '点赞' : '取消点赞'} ${target.type}#${target.id}`);
+  await logAudit(db, liked ? 'like' : 'unlike', me.username, `${liked ? '点赞' : '取消点赞'} ${await targetLabel(db, target)}`);
   return c.json({ liked, count: await countOf(db, target.type, target.id) });
 });
 
@@ -191,7 +201,7 @@ likes.post('/burst', likerAuth, async (c) => {
   const applied = dailyUsed - (before?.daily_count ?? 0);
   // 额度耗尽（实际增量为 0）时不写「连赞 +0」审计
   if (applied > 0) {
-    await logAudit(db, 'like_burst', me.username, `连赞 +${applied} ${target.type}#${target.id}`);
+    await logAudit(db, 'like_burst', me.username, `连赞 +${applied} ${await targetLabel(db, target)}`);
     await notifyLike(c, me, target);
   }
   return c.json({
