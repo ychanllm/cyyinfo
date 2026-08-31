@@ -14,7 +14,8 @@ watch(() => route.fullPath, () => { if (hasNotificationToken()) loadUnread(); })
 async function go(n) {
   open.value = false;
   await markRead([n.id]);
-  router.push(notificationLink(n));
+  const link = notificationLink(n);
+  if (link) router.push(link);
 }
 
 async function readAll() {

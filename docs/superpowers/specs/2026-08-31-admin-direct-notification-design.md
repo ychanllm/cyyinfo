@@ -19,7 +19,7 @@
 
 ## 改动清单
 
-### 1. 迁移 `worker/migrations/0024_notification_message_type.sql`
+### 1. 迁移 `worker/migrations/0025_notification_message_type.sql`
 
 参照 `0023_notifications_expand.sql` 重建表，CHECK 约束 type 增加 `'message'`：
 
@@ -64,7 +64,7 @@ target_type='message', target_id=NULL, detail=content
 
 ### 5. i18n
 
-`web/src/i18n/zh.js`、`en.js` 增加 `adminUsers.notify`、`adminUsers.notifyPlaceholder`、`adminUsers.notifySent` 等键。
+站点锁定中文（无 en.js），`web/src/i18n/zh.js` 的 `adminUsers` 增加 `notify`、`notifyPh`、`notifyRequired`、`notifySend`、`notifySending` 键。
 
 ### 6. 测试 `worker/test/admin-notifications.test.ts`
 

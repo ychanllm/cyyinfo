@@ -66,6 +66,7 @@ admin.use('/settings', adminAuth);
 admin.use('/settings/*', adminAuth);
 admin.use('/site-users', adminAuth);
 admin.use('/site-users/*', adminAuth);
+admin.use('/notifications', adminAuth);
 admin.use('/changelogs', adminAuth);
 admin.use('/changelogs/*', adminAuth);
 admin.use('/audit-logs', adminAuth);
@@ -109,6 +110,24 @@ admin.delete('/users/:id', async (c) => {
     .bind(targetId).first<{ username: string }>();
   await c.env.DB.prepare('DELETE FROM admin_users WHERE id = ?').bind(targetId).run();
   await logAudit(c.env.DB, 'user_delete', me.username, `删除管理员账号 ${target?.username ?? targetId}`);
+  return c.json({ ok: true });
+});
+
+// ---- 管理员直发用户提醒（message 类型通知，detail 直通展示，无跳转目标）----
+admin.post('/notifications', async (c) => {
+  const { user_id, content } = await c.req.json<{ user_id?: number; content?: string }>();
+  const text = (content ?? '').trim();
+  if (!Number.isInteger(user_id) || (user_id as number) <= 0) return c.json({ detail: '非法的用户' }, 400);
+  if (!text) return c.json({ detail: '内容必填' }, 400);
+  if (text.length > 200) return c.json({ detail: '内容过长（200 字以内）' }, 400);
+  const user = await c.env.DB.prepare('SELECT id, username FROM users WHERE id = ?')
+    .bind(user_id).first<{ id: number; username: string }>();
+  if (!user) return c.json({ detail: '用户不存在' }, 404);
+  const me = c.get('admin') as { username: string };
+  await c.env.DB.prepare(
+    'INSERT INTO notifications (recipient_type, recipient_id, type, message_id, actor_nickname, target_type, target_id, detail) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+  ).bind('user', user_id, 'message', null, me.username, 'message', null, text).run();
+  await logAudit(c.env.DB, 'admin_notify', me.username, `给用户 ${user.username} 发提醒：${text.slice(0, 30)}`);
   return c.json({ ok: true });
 });
 

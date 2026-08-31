@@ -24,7 +24,8 @@ function close() {
 async function go(n) {
   close();
   await markRead([n.id]);
-  router.push(notificationLink(n));
+  const link = notificationLink(n);
+  if (link) router.push(link);
 }
 </script>
 

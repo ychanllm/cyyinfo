@@ -149,6 +149,36 @@ async function toggleDetail(u) {
   }
 }
 
+// 发提醒：行内展开输入框，仅支持指定单个用户
+const notifyId = ref(0);
+const notifyText = ref('');
+const notifySending = ref(false);
+
+function toggleNotify(u) {
+  if (notifyId.value === u.id) { notifyId.value = 0; return; }
+  notifyId.value = u.id;
+  notifyText.value = '';
+}
+
+async function sendNotify(u) {
+  const text = notifyText.value.trim();
+  if (!text) {
+    error.value = t('adminUsers.notifyRequired');
+    return;
+  }
+  notifySending.value = true;
+  error.value = '';
+  try {
+    await api('/admin/notifications', { method: 'POST', admin: true, body: { user_id: u.id, content: text } });
+    notifyId.value = 0;
+    notifyText.value = '';
+  } catch (e) {
+    error.value = e.message;
+  } finally {
+    notifySending.value = false;
+  }
+}
+
 const TX_TYPE_KEYS = {
   checkin: 'typeCheckin',
   box: 'typeBox',
@@ -241,6 +271,19 @@ onMounted(() => {
               <button class="btn" @click="toggleDetail(u)">
                 {{ expandedId === u.id ? t('adminUsers.collapse') : t('adminUsers.detail') }}
               </button>
+              <button class="btn" @click="toggleNotify(u)">
+                {{ notifyId === u.id ? t('adminUsers.collapse') : t('adminUsers.notify') }}
+              </button>
+            </td>
+          </tr>
+          <tr v-if="notifyId === u.id" class="detail-row">
+            <td colspan="6">
+              <div class="notify-row">
+                <input v-model="notifyText" type="text" maxlength="200" :placeholder="t('adminUsers.notifyPh')" @keyup.enter="sendNotify(u)" />
+                <button class="btn primary" :disabled="notifySending" @click="sendNotify(u)">
+                  {{ notifySending ? t('adminUsers.notifySending') : t('adminUsers.notifySend') }}
+                </button>
+              </div>
             </td>
           </tr>
           <tr v-if="expandedId === u.id" class="detail-row">
@@ -431,6 +474,20 @@ onMounted(() => {
 .detail-row td {
   background: rgba(0, 0, 0, 0.02);
   padding: 14px 12px;
+}
+.notify-row {
+  display: flex;
+  gap: 8px;
+}
+.notify-row input {
+  flex: 1;
+  padding: 8px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  outline: none;
+}
+.notify-row input:focus {
+  border-color: var(--color-primary);
 }
 .detail-row h4 {
   font-size: 14px;

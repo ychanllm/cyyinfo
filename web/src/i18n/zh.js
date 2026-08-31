@@ -671,6 +671,11 @@ export default {
     typeRedeem: '兑换奖品',
     typeCancelRefund: '取消退还',
     typeOther: '其他',
+    notify: '发提醒',
+    notifyPh: '提醒内容（200 字以内）',
+    notifyRequired: '请输入提醒内容',
+    notifySend: '发送',
+    notifySending: '发送中…',
   },
   adminPrizes: {
     title: '奖品管理',

@@ -48,13 +48,16 @@ export function notificationText(n) {
       return `${n.actor_nickname} 也评论了你参与的日记${excerpt}`;
     case 'prize':
       return n.detail || '你有一条奖品动态';
+    case 'message':
+      return n.detail ? `站长消息：${n.detail}` : '你有一条站长消息';
     default:
       return '你有一条新消息';
   }
 }
 
-// 通知点击的跳转目标
+// 通知点击的跳转目标；返回 null 表示无跳转（如站长直发消息）
 export function notificationLink(n) {
+  if (n.target_type === 'message') return null;
   // 站长的待审核评论通知 → 后台留言审核
   if (n.type === 'comment' && (n.target_type === 'photo' || n.target_type === 'site')) {
     return '/admin/messages';
