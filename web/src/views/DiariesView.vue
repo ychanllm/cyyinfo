@@ -53,6 +53,19 @@ function selectCategory(id) {
   load(1); // 切换分类回到第 1 页
 }
 
+// 列表摘要清洗：后端返回的是 content_md 原文截断，含内嵌 HTML/markdown 标记。
+// 图片显示为「图片」，去掉其余标签与标记，压缩空白；末尾可能被截断的半个标签也剥掉。
+function excerptText(raw) {
+  return (raw || '')
+    .replace(/<img\b[^>]*>/gi, '「图片」')
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, '「图片」')
+    .replace(/<[^>]+>/g, '')
+    .replace(/<[^>]*$/g, '')
+    .replace(/[*`#]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 onMounted(async () => {
   load(1);
   try {
@@ -103,7 +116,7 @@ onMounted(async () => {
         />
         <div class="meta">
           <h2 class="title">{{ d.title }}</h2>
-          <p v-if="d.excerpt" class="excerpt">{{ d.excerpt }}</p>
+          <p v-if="d.excerpt" class="excerpt">{{ excerptText(d.excerpt) }}</p>
           <p class="info">
             <span v-if="d.category_name" class="cat-badge">{{ d.category_name }}</span>
             {{ d.author }} · {{ fmtDateFull(d.published_at) }}
