@@ -148,3 +148,17 @@ describe('权限管理 API', () => {
     });
   });
 });
+
+describe('auth/me 权限', () => {
+  it('返回当前用户权限列表，无权限为 []', async () => {
+    const u = await registerUser('perm_me');
+    let meRes = await SELF.fetch('http://x/api/auth/me', { headers: userAuth(u.token) });
+    expect((await meRes.json() as any).permissions).toEqual([]);
+
+    await grant(u.id, 'album');
+    meRes = await SELF.fetch('http://x/api/auth/me', { headers: userAuth(u.token) });
+    expect((await meRes.json() as any).permissions).toEqual(['album']);
+
+    await revokeAll(u.id);
+  });
+});

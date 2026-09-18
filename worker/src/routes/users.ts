@@ -67,7 +67,9 @@ users.get('/auth/me', userAuth, async (c) => {
   const row = await c.env.DB.prepare('SELECT id, username, points, avatar, created_at FROM users WHERE id = ?')
     .bind(me.id).first();
   if (!row) return c.json({ detail: '用户不存在' }, 404);
-  return c.json(row);
+  const { results: perms } = await c.env.DB.prepare('SELECT permission FROM user_permissions WHERE user_id = ?')
+    .bind(me.id).all<{ permission: string }>();
+  return c.json({ ...(row as object), permissions: perms.map((p) => p.permission) });
 });
 
 // 头像上传：仅图片且 ≤ 5MB，旧头像文件随之删除
