@@ -349,6 +349,7 @@ onBeforeUnmount(() => {
           :target-id="diary.id"
           :count="likeState.count"
           :liked="likeState.liked"
+          :daily-remaining="likeState.daily_remaining ?? null"
           @update="likeState = $event"
         />
       </div>
@@ -411,6 +412,7 @@ onBeforeUnmount(() => {
                 :target-id="c.id"
                 :count="popLikeState(c.id).count"
                 :liked="popLikeState(c.id).liked"
+                :daily-remaining="popLikeState(c.id).daily_remaining ?? null"
                 @update="popLikes[c.id] = $event"
               />
               <button type="button" class="qp-reply-btn" @click="popReply.forId === c.id ? (popReply.forId = null) : openPopReply(c)">
@@ -438,6 +440,7 @@ onBeforeUnmount(() => {
                     :target-id="r.id"
                     :count="popLikeState(r.id).count"
                     :liked="popLikeState(r.id).liked"
+                    :daily-remaining="popLikeState(r.id).daily_remaining ?? null"
                     @update="popLikes[r.id] = $event"
                   />
                   <button type="button" class="qp-reply-btn" @click="popReply.forId === c.id ? (popReply.forId = null) : openPopReply(c)">

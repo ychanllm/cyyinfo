@@ -63,6 +63,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown));
         :target-id="current.id"
         :count="likeState.count"
         :liked="likeState.liked"
+        :daily-remaining="likeState.daily_remaining ?? null"
         @update="likeState = $event"
       />
       <router-link

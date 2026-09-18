@@ -29,7 +29,7 @@ export const prev = () => load((state.index - 1 + state.queue.length) % state.qu
 export const seek = (sec) => { audio.currentTime = sec; };
 export const setVolume = (v) => { audio.volume = state.volume = v; };
 
-// 进入站点自动播放：随机挑一张有歌的专辑从头播放。
+// 进入站点自动播放：随机挑一张有歌的专辑，洗牌后播放（避免总是从第一首开始）。
 // 只在队列为空时生效（避免打断用户已在播放的音乐），失败静默。
 export async function autoPlayMusic() {
   if (state.queue.length) return;
@@ -40,7 +40,13 @@ export async function autoPlayMusic() {
     const album = candidates[Math.floor(Math.random() * candidates.length)];
     const detail = await api(`/music/albums/${album.id}`);
     const songs = detail?.songs || [];
-    if (songs.length) playQueue(songs, 0);
+    if (!songs.length) return;
+    // Fisher-Yates 洗牌：顺序播放洗后的队列即等价于随机播放
+    for (let i = songs.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [songs[i], songs[j]] = [songs[j], songs[i]];
+    }
+    playQueue(songs, 0);
   } catch { /* 自动播放失败不阻塞进入站点 */ }
 }
 

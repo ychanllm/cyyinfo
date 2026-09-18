@@ -28,6 +28,8 @@ export default defineWorkersConfig(async () => {
               ADMIN_USERNAME: 'admin',
               ADMIN_PASSWORD: 'testpass123',
               JWT_EXPIRE_HOURS: '72',
+              // 全量测试串行共享同一 isolate，注册接口本地限流 30 次/15 分钟不够用，测试环境调高
+              REGISTER_RATE_LIMIT: '200',
               MIGRATIONS: migrations,
             },
           },

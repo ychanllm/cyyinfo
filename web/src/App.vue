@@ -7,6 +7,7 @@ import { autoPlayMusic } from './player';
 import NavBar from './components/NavBar.vue';
 import DesktopPet from './components/DesktopPet.vue';
 import MiniPlayer from './components/MiniPlayer.vue';
+import NotificationPopup from './components/NotificationPopup.vue';
 
 const route = useRoute();
 const isAdmin = computed(() => route.meta.admin);
@@ -38,6 +39,7 @@ onMounted(async () => {
     </main>
     <DesktopPet />
     <MiniPlayer />
+    <NotificationPopup />
   </template>
 </template>
 

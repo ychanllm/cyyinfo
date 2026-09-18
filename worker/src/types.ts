@@ -5,6 +5,7 @@ export interface Env {
   JWT_EXPIRE_HOURS: string;
   LOGIN_RATE_LIMITER?: RateLimit;
   REGISTER_RATE_LIMITER?: RateLimit;
+  REGISTER_RATE_LIMIT?: string;
   PASSCODE_RATE_LIMITER?: RateLimit;
   MESSAGE_RATE_LIMITER?: RateLimit;
   ADMIN_USERNAME: string;
@@ -14,7 +15,8 @@ export interface Env {
 export interface Variables {
   admin: { id: number; username: string };
   user: { id: number; username: string };
-  liker: { id: number; username: string };
+  liker: { id: number; username: string; role: string; sub: number };
+  recipient: { type: 'user' | 'admin'; id: number };
 }
 
 export type AppEnv = { Bindings: Env; Variables: Variables };

@@ -8,6 +8,9 @@ const json = { 'Content-Type': 'application/json' };
 
 async function cleanup() {
   // 先清子表再清 users：checkins/prize_records/point_transactions 都有指向 users 的外键
+  // notifications 引用 messages，messages 引用 users（外键引用，须先删引用方）
+  await env.DB.prepare('DELETE FROM notifications').run();
+  await env.DB.prepare('DELETE FROM messages WHERE user_id IS NOT NULL').run();
   await env.DB.prepare('DELETE FROM point_transactions').run();
   await env.DB.prepare('DELETE FROM prize_records').run();
   await env.DB.prepare('DELETE FROM checkins').run();

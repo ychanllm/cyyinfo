@@ -16,9 +16,20 @@ const AUDIO_TYPES: Record<string, string> = {
   weba: 'audio/webm',
 };
 
+// 空 MIME 回退上传的图片在 R2 无 contentType metadata，按扩展名补映射，保证浏览器预览而非下载。
+const IMAGE_TYPES: Record<string, string> = {
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  png: 'image/png',
+  webp: 'image/webp',
+  gif: 'image/gif',
+  heic: 'image/heic',
+  heif: 'image/heif',
+};
+
 function contentTypeFor(key: string, stored?: string): string {
   const ext = key.split('.').pop()?.toLowerCase() ?? '';
-  return AUDIO_TYPES[ext] ?? stored ?? 'application/octet-stream';
+  return AUDIO_TYPES[ext] ?? IMAGE_TYPES[ext] ?? stored ?? 'application/octet-stream';
 }
 
 // 解析单段 Range 头（bytes=start-end / start- / -suffix）。

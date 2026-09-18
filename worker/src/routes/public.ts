@@ -1,10 +1,11 @@
 import { Hono } from 'hono';
 import bcrypt from 'bcryptjs';
 import type { AppEnv, Env } from '../types';
-import { signJwt } from '../auth';
+import { signJwt, verifyJwt } from '../auth';
 import { enforceRateLimit, clientIp } from '../security';
 import { contentGuard, getSetting } from '../guard';
 import { logAudit } from '../audit';
+import { parsePagination } from '../pagination';
 
 const pub = new Hono<AppEnv>();
 
@@ -13,16 +14,11 @@ function localized(c: { req: { query: (k: string) => string | undefined } }): 'e
   return c.req.query('lang') === 'en' ? 'en' : 'zh';
 }
 
-function parsePagination(c: { req: { query: (k: string) => string | undefined } }, defaultSize: number, maxSize: number) {
-  const pageRaw = c.req.query('page');
-  const sizeRaw = c.req.query('size');
-  const pageValue = Number(pageRaw);
-  const sizeValue = Number(sizeRaw);
-  const page = Number.isSafeInteger(pageValue) && pageValue > 0 ? pageValue : 1;
-  const size = Number.isSafeInteger(sizeValue) && sizeValue > 0
-    ? Math.min(sizeValue, maxSize)
-    : defaultSize;
-  return { page, size, offset: (page - 1) * size, requested: pageRaw !== undefined || sizeRaw !== undefined };
+// 从可选的 Authorization 解析 JWT payload（无 token / 无效 token 视为游客，不影响评论）
+async function optionalPayload(c: { req: { header: (k: string) => string | undefined }; env: Env }) {
+  const header = c.req.header('Authorization') ?? '';
+  const token = header.replace(/^Bearer\s+/i, '');
+  return token ? verifyJwt(c.env, token) : null;
 }
 
 pub.get('/site/status', async (c) => {
@@ -214,11 +210,12 @@ content.post('/messages', async (c) => {
   if (!['diary', 'photo', 'site'].includes(target_type)) return c.json({ detail: '非法目标类型' }, 400);
   // 楼中楼回复：parent 必须存在且与回复同 target；回复的回复挂到顶级（一层楼中楼）
   let parentId: number | null = null;
+  let parent: { id: number; target_type: string; target_id: number | null; parent_id: number | null; user_id: number | null } | null = null;
   if (parent_id !== null && parent_id !== undefined) {
     if (!Number.isInteger(parent_id) || parent_id <= 0) return c.json({ detail: '非法的父评论' }, 400);
-    const parent = await c.env.DB.prepare(
-      'SELECT id, target_type, target_id, parent_id FROM messages WHERE id = ?'
-    ).bind(parent_id).first<{ id: number; target_type: string; target_id: number | null; parent_id: number | null }>();
+    parent = await c.env.DB.prepare(
+      'SELECT id, target_type, target_id, parent_id, user_id FROM messages WHERE id = ?'
+    ).bind(parent_id).first<{ id: number; target_type: string; target_id: number | null; parent_id: number | null; user_id: number | null }>();
     if (!parent) return c.json({ detail: '父评论不存在' }, 400);
     const sameTarget = parent.target_type === target_type
       && (parent.target_id ?? null) === (target_id ?? null);
@@ -232,8 +229,51 @@ content.post('/messages', async (c) => {
   if (quote && quote.length > 500) return c.json({ detail: '引用内容过长（500 字以内）' }, 400);
   // 日记评论免审核直接发布；site/photo 保持待审核
   const approved = target_type === 'diary' ? 1 : 0;
-  await c.env.DB.prepare('INSERT INTO messages (nickname, content, target_type, target_id, quote_text, parent_id, is_approved) VALUES (?, ?, ?, ?, ?, ?, ?)')
-    .bind(nickname.trim(), text.trim(), target_type, target_id, quote, parentId, approved).run();
+  // 登录用户发的评论记录 user_id（游客为 NULL）；payload 同时用于排除站长自评
+  const payload = await optionalPayload(c);
+  const userId = payload?.role === 'user' ? Number(payload.sub) : null;
+  const inserted = await c.env.DB.prepare(
+    'INSERT INTO messages (nickname, content, target_type, target_id, quote_text, parent_id, is_approved, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id'
+  ).bind(nickname.trim(), text.trim(), target_type, target_id, quote, parentId, approved, userId)
+    .first<{ id: number }>();
+  // 生成通知；失败不阻断评论
+  try {
+    if (parentId && parent!.user_id && parent!.user_id !== userId) {
+      // 回复 → 通知父评论作者（仅登录用户发的评论可定位接收人）
+      await c.env.DB.prepare(
+        'INSERT INTO notifications (recipient_type, recipient_id, type, message_id, actor_nickname, target_type, target_id) VALUES (?, ?, ?, ?, ?, ?, ?)'
+      ).bind('user', parent!.user_id, 'reply', inserted!.id, nickname.trim(), target_type, target_id).run();
+    } else if (!parentId && target_type === 'diary' && target_id) {
+      // 日记顶级评论 → 通知站长作者；站长自己评论自己除外
+      const diary = await c.env.DB.prepare('SELECT author_id FROM diaries WHERE id = ?')
+        .bind(target_id).first<{ author_id: number }>();
+      const isAuthor = payload?.role === 'admin' && Number(payload.sub) === diary?.author_id;
+      if (diary && !isAuthor) {
+        await c.env.DB.prepare(
+          'INSERT INTO notifications (recipient_type, recipient_id, type, message_id, actor_nickname, target_type, target_id) VALUES (?, ?, ?, ?, ?, ?, ?)'
+        ).bind('admin', diary.author_id, 'comment', inserted!.id, nickname.trim(), 'diary', target_id).run();
+      }
+      // 讨论串订阅：通知在该日记评论过的其他登录用户（自己的评论不通知自己）
+      const { results: subscribers } = await c.env.DB.prepare(
+        'SELECT DISTINCT user_id FROM messages WHERE target_type = ? AND target_id = ? AND user_id IS NOT NULL'
+      ).bind(target_type, target_id).all<{ user_id: number }>();
+      for (const s of subscribers) {
+        if (s.user_id === userId) continue;
+        await c.env.DB.prepare(
+          'INSERT INTO notifications (recipient_type, recipient_id, type, message_id, actor_nickname, target_type, target_id) VALUES (?, ?, ?, ?, ?, ?, ?)'
+        ).bind('user', s.user_id, 'thread', inserted!.id, nickname.trim(), 'diary', target_id).run();
+      }
+    } else if (!parentId && (target_type === 'photo' || target_type === 'site')) {
+      // 照片/留言板新评论（待审核）→ 立即通知全体站长；excerpt 由查询层 is_approved 保护
+      const { results: admins } = await c.env.DB.prepare('SELECT id FROM admin_users').all<{ id: number }>();
+      for (const a of admins) {
+        if (payload?.role === 'admin' && Number(payload.sub) === a.id) continue; // 站长自己留的不通知
+        await c.env.DB.prepare(
+          'INSERT INTO notifications (recipient_type, recipient_id, type, message_id, actor_nickname, target_type, target_id) VALUES (?, ?, ?, ?, ?, ?, ?)'
+        ).bind('admin', a.id, 'comment', inserted!.id, nickname.trim(), target_type, target_id).run();
+      }
+    }
+  } catch { /* 通知失败不影响评论 */ }
   const targetLabel = target_id ? `${target_type}#${target_id}` : target_type;
   await logAudit(c.env.DB, 'message_post', nickname.trim(), `在 ${targetLabel} 留言：${text.trim().slice(0, 30)}`);
   return approved
@@ -267,12 +307,29 @@ const LEADERBOARD_TAIL = `
   ORDER BY score DESC, t.id ASC LIMIT 10`;
 content.get('/leaderboard', async (c) => {
   const db = c.env.DB;
+  // 相册榜:并入其下非隐藏照片的赞与浏览(口径与照片榜一致,排除 hidden)
   const { results: albums } = await db.prepare(
     `SELECT t.id, t.title, t.title_en,
-            COALESCE(v.views, 0) AS views, COALESCE(l.likes, 0) AS likes,
-            COALESCE(l.likes, 0) * 5 + COALESCE(v.views, 0) AS score
-     FROM albums t ${LEADERBOARD_STATS} ${LEADERBOARD_TAIL}`
-  ).bind('album', 'album').all();
+            COALESCE(v.views, 0) + COALESCE(ps.photo_views, 0) AS views,
+            COALESCE(l.likes, 0) + COALESCE(ps.photo_likes, 0) AS likes,
+            (COALESCE(l.likes, 0) + COALESCE(ps.photo_likes, 0)) * 5
+              + COALESCE(v.views, 0) + COALESCE(ps.photo_views, 0) AS score
+     FROM albums t
+     LEFT JOIN (SELECT target_id, count AS views FROM view_counts WHERE target_type = 'album') v ON v.target_id = t.id
+     LEFT JOIN (SELECT target_id, COALESCE(SUM(count), 0) AS likes FROM likes WHERE target_type = 'album' GROUP BY target_id) l ON l.target_id = t.id
+     LEFT JOIN (
+       SELECT p.album_id,
+              COALESCE(SUM(pl.cnt), 0) AS photo_likes,
+              COALESCE(SUM(pv.cnt), 0) AS photo_views
+       FROM photos p
+       LEFT JOIN (SELECT target_id, SUM(count) AS cnt FROM likes WHERE target_type = 'photo' GROUP BY target_id) pl ON pl.target_id = p.id
+       LEFT JOIN (SELECT target_id, count AS cnt FROM view_counts WHERE target_type = 'photo') pv ON pv.target_id = p.id
+       WHERE p.hidden = 0
+       GROUP BY p.album_id
+     ) ps ON ps.album_id = t.id
+     WHERE COALESCE(v.views, 0) + COALESCE(l.likes, 0) + COALESCE(ps.photo_views, 0) + COALESCE(ps.photo_likes, 0) > 0
+     ORDER BY score DESC, t.id ASC LIMIT 10`
+  ).all();
   // 照片榜排除已隐藏的
   const { results: photos } = await db.prepare(
     `SELECT t.id, t.album_id, t.filename, t.caption, t.caption_en,
@@ -300,7 +357,23 @@ content.get('/leaderboard', async (c) => {
        AND COALESCE(v.views, 0) + COALESCE(l.likes, 0) + COALESCE(ml.msg_likes, 0) > 0
      ORDER BY score DESC, t.id ASC LIMIT 10`
   ).bind('diary', 'diary').all();
-  return c.json({ albums, photos, diaries });
+  // 探店榜：按点赞（score = 赞*5，与既有口径一致；无浏览量）
+  const { results: stores } = await db.prepare(
+    `SELECT t.id, t.name,
+            COALESCE(l.likes, 0) AS likes, COALESCE(l.likes, 0) * 5 AS score
+     FROM stores t
+     LEFT JOIN (SELECT target_id, COALESCE(SUM(count), 0) AS likes FROM likes WHERE target_type = 'store' GROUP BY target_id) l ON l.target_id = t.id
+     WHERE t.is_active = 1 AND COALESCE(l.likes, 0) > 0
+     ORDER BY score DESC, t.id ASC LIMIT 10`
+  ).all();
+  // 点菜榜：按想吃数
+  const { results: dishes } = await db.prepare(
+    `SELECT t.id, t.name, COUNT(w.id) AS wants
+     FROM dishes t JOIN dish_wants w ON w.dish_id = t.id
+     WHERE t.is_active = 1
+     GROUP BY t.id ORDER BY wants DESC, t.id ASC LIMIT 10`
+  ).all();
+  return c.json({ albums, photos, diaries, stores, dishes });
 });
 
 content.get('/music/albums/:id', async (c) => {

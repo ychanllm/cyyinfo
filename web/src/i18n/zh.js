@@ -9,6 +9,7 @@ export default {
     music: '音乐',
     points: '签到',
     ranking: '排行',
+    food: '想吃',
     dishes: '点菜',
     stores: '探店',
     adminEntry: '内容管理',
@@ -152,8 +153,7 @@ export default {
     like: '赞',
     liked: '已赞',
     loginToLike: '登录后即可点赞',
-    max: '最多只能赞 50 下哦',
-    unlikeAll: '长按取消全部赞',
+    max: '今天最多只能赞 50 下哦',
   },
   ranking: {
     title: '排行榜',
@@ -225,6 +225,10 @@ export default {
     statusCancelled: '已取消',
     confirmUse: '确定使用「{name}」吗？使用后不可撤销。',
   },
+  adminList: {
+    searchPh: '搜索…',
+    total: '共 {n} 条',
+  },
   admin: {
     brand: '管理后台',
     stats: '统计',
@@ -232,6 +236,7 @@ export default {
     photos: '照片',
     diaries: '日记',
     music: '音乐',
+    food: '想吃',
     dishes: '菜品管理',
     stores: '探店管理',
     messages: '留言',
@@ -678,6 +683,11 @@ export default {
     typeRedeem: '兑换奖品',
     typeCancelRefund: '取消退还',
     typeOther: '其他',
+    notify: '发提醒',
+    notifyPh: '提醒内容（200 字以内）',
+    notifyRequired: '请输入提醒内容',
+    notifySend: '发送',
+    notifySending: '发送中…',
   },
   adminPrizes: {
     title: '奖品管理',

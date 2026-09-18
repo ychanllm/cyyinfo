@@ -6,6 +6,7 @@ import { api, getUserToken } from '../api';
 import { loadSiteStatus } from '../site-status';
 import { localize } from '../i18n';
 import { me, loadMe } from '../me';
+import NotificationBell from './NotificationBell.vue';
 
 const { t } = useI18n();
 const route = useRoute();
@@ -40,8 +41,7 @@ const links = computed(() => {
     { to: localize('/leaderboard'), label: t('nav.ranking'), icon: '🏆' },
     { to: localize('/music'), label: t('nav.music'), icon: '🎵' },
     { to: localize('/points'), label: t('nav.points'), icon: '📅' },
-    { to: localize('/dishes'), label: t('nav.dishes'), icon: '🍲' },
-    { to: localize('/stores'), label: t('nav.stores'), icon: '🧭' },
+    { to: localize('/food'), label: t('nav.food'), icon: '🍲' },
   ];
   // 获权用户（有日记/相册权限）显示后台内容管理入口
   if (me.value?.permissions?.length) {
@@ -62,6 +62,7 @@ const links = computed(() => {
         <router-link :to="localize('/')" class="brand">{{ siteName }}</router-link>
       </div>
       <div class="right">
+        <NotificationBell />
         <nav class="links">
           <router-link
             v-for="l in links"

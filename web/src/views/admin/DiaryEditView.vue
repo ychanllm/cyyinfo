@@ -156,7 +156,6 @@ async function uploadCover(event) {
 // ---- 正文工具栏：插图 / 颜色 / 字号（内嵌 HTML，marked 透传）----
 const taZh = ref(null);
 const taEn = ref(null);
-const imageInput = ref(null);
 
 const TEXT_COLORS = [
   { key: 'colorDefault', value: '' },
@@ -217,13 +216,14 @@ function pickSize(event) {
   wrapSelection(`font-size:${value}`);
 }
 
-function triggerImage() {
-  if (!isEdit.value) {
-    error.value = t('adminDiaryEdit.imageEditOnly');
-    setTimeout(() => { if (error.value === t('adminDiaryEdit.imageEditOnly')) error.value = ''; }, 2000);
-    return;
-  }
-  imageInput.value?.click();
+// 插入图片按钮用 <label> 原生触发文件选择：iOS Safari 会拦截对 display:none
+// 文件输入框的 JS .click()（桌面端正常），与相册/封面上传保持同一模式。
+// 非编辑模式阻止默认行为并提示。
+function guardImageEdit(event) {
+  if (isEdit.value) return;
+  event.preventDefault();
+  error.value = t('adminDiaryEdit.imageEditOnly');
+  setTimeout(() => { if (error.value === t('adminDiaryEdit.imageEditOnly')) error.value = ''; }, 2000);
 }
 
 async function uploadInlineImage(event) {
@@ -299,9 +299,10 @@ async function uploadInlineImage(event) {
           <div class="content-head">
             <span class="label">{{ t('adminDiaryEdit.content') }}</span>
             <div class="editor-tools">
-              <button type="button" class="tool-btn" :disabled="uploading" @click="triggerImage">
+              <label class="tool-btn" @click="guardImageEdit">
                 {{ uploading ? t('adminDiaryEdit.uploading') : t('adminDiaryEdit.insertImage') }}
-              </button>
+                <input type="file" accept="image/*" class="file-input" :disabled="uploading" @change="uploadInlineImage" />
+              </label>
               <select class="tool-select" :title="t('adminDiaryEdit.textColor')" @change="pickColor">
                 <option value="">{{ t('adminDiaryEdit.textColor') }}</option>
                 <option v-for="c in TEXT_COLORS.slice(1)" :key="c.value" :value="c.value">{{ c.key }}</option>
@@ -310,7 +311,6 @@ async function uploadInlineImage(event) {
                 <option value="">{{ t('adminDiaryEdit.fontSize') }}</option>
                 <option v-for="s in FONT_SIZES.slice(1)" :key="s.value" :value="s.value">{{ t(`adminDiaryEdit.${s.key}`) }}</option>
               </select>
-              <input ref="imageInput" type="file" accept="image/*" class="file-input" @change="uploadInlineImage" />
             </div>
             <div class="lang-tabs">
               <button type="button" :class="{ active: contentLang === 'zh' }" @click="contentLang = 'zh'">{{ t('adminDiaryEdit.zh') }}</button>

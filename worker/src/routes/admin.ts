@@ -6,6 +6,7 @@ import { getSetting, setSetting } from '../guard';
 import { enforceRateLimit, clientIp } from '../security';
 import { saveUpload } from '../upload';
 import { logAudit } from '../audit';
+import { parsePagination, searchFilter } from '../pagination';
 
 interface AdminUserRow {
   id: number;
@@ -73,6 +74,7 @@ admin.use('/settings', adminAuth);
 admin.use('/settings/*', adminAuth);
 admin.use('/site-users', adminAuth);
 admin.use('/site-users/*', adminAuth);
+admin.use('/notifications', adminAuth);
 admin.use('/changelogs', adminAuth);
 admin.use('/changelogs/*', adminAuth);
 admin.use('/permissions', adminAuth);
@@ -118,6 +120,24 @@ admin.delete('/users/:id', async (c) => {
     .bind(targetId).first<{ username: string }>();
   await c.env.DB.prepare('DELETE FROM admin_users WHERE id = ?').bind(targetId).run();
   await logAudit(c.env.DB, 'user_delete', me.username, `删除管理员账号 ${target?.username ?? targetId}`);
+  return c.json({ ok: true });
+});
+
+// ---- 管理员直发用户提醒（message 类型通知，detail 直通展示，无跳转目标）----
+admin.post('/notifications', async (c) => {
+  const { user_id, content } = await c.req.json<{ user_id?: number; content?: string }>();
+  const text = (content ?? '').trim();
+  if (!Number.isInteger(user_id) || (user_id as number) <= 0) return c.json({ detail: '非法的用户' }, 400);
+  if (!text) return c.json({ detail: '内容必填' }, 400);
+  if (text.length > 200) return c.json({ detail: '内容过长（200 字以内）' }, 400);
+  const user = await c.env.DB.prepare('SELECT id, username FROM users WHERE id = ?')
+    .bind(user_id).first<{ id: number; username: string }>();
+  if (!user) return c.json({ detail: '用户不存在' }, 404);
+  const me = c.get('admin') as { username: string };
+  await c.env.DB.prepare(
+    'INSERT INTO notifications (recipient_type, recipient_id, type, message_id, actor_nickname, target_type, target_id, detail) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+  ).bind('user', user_id, 'message', null, me.username, 'message', null, text).run();
+  await logAudit(c.env.DB, 'admin_notify', me.username, `给用户 ${user.username} 发提醒：${text.slice(0, 30)}`);
   return c.json({ ok: true });
 });
 
@@ -268,8 +288,19 @@ admin.put('/settings', async (c) => {
 
 // ---- 相册 CRUD ----
 admin.get('/albums', async (c) => {
-  const { results } = await c.env.DB.prepare('SELECT * FROM albums ORDER BY sort_order, id').all();
-  return c.json(results);
+  const pagination = parsePagination(c, 20, 100);
+  const search = searchFilter(c, ['title', 'title_en']);
+  const base = `FROM albums WHERE 1=1${search.where}`;
+  if (!pagination.requested) {
+    const { results } = await c.env.DB.prepare(`SELECT * ${base} ORDER BY sort_order, id`)
+      .bind(...search.args).all();
+    return c.json(results);
+  }
+  const total = await c.env.DB.prepare(`SELECT COUNT(*) AS n ${base}`)
+    .bind(...search.args).first<{ n: number }>();
+  const { results } = await c.env.DB.prepare(`SELECT * ${base} ORDER BY sort_order, id LIMIT ? OFFSET ?`)
+    .bind(...search.args, pagination.size, pagination.offset).all();
+  return c.json({ items: results, total: total?.n ?? 0, page: pagination.page, size: pagination.size });
 });
 
 admin.post('/albums', async (c) => {
@@ -319,10 +350,22 @@ admin.get('/albums/:id', async (c) => {
   const album = await c.env.DB.prepare('SELECT * FROM albums WHERE id = ?')
     .bind(c.req.param('id')).first();
   if (!album) return c.json({ detail: '相册不存在' }, 404);
-  const { results: photos } = await c.env.DB.prepare(
-    'SELECT id, filename, caption, caption_en, taken_at, sort_order, hidden FROM photos WHERE album_id = ? ORDER BY sort_order, id'
-  ).bind(c.req.param('id')).all();
-  return c.json({ ...album, photos });
+  const pagination = parsePagination(c, 20, 100);
+  const search = searchFilter(c, ['caption', 'caption_en']);
+  const cols = 'id, filename, caption, caption_en, taken_at, sort_order, hidden';
+  const base = `FROM photos WHERE album_id = ?${search.where}`;
+  if (!pagination.requested) {
+    const { results: photos } = await c.env.DB.prepare(
+      `SELECT ${cols} ${base} ORDER BY sort_order, id`
+    ).bind(c.req.param('id'), ...search.args).all();
+    return c.json({ ...album, photos });
+  }
+  const total = await c.env.DB.prepare(`SELECT COUNT(*) AS n ${base}`)
+    .bind(c.req.param('id'), ...search.args).first<{ n: number }>();
+  const { results: items } = await c.env.DB.prepare(
+    `SELECT ${cols} ${base} ORDER BY sort_order, id LIMIT ? OFFSET ?`
+  ).bind(c.req.param('id'), ...search.args, pagination.size, pagination.offset).all();
+  return c.json({ ...album, photos: { items, total: total?.n ?? 0, page: pagination.page, size: pagination.size } });
 });
 
 // ---- 照片 ----
@@ -384,12 +427,21 @@ admin.delete('/photos/:id', async (c) => {
 
 // ---- 日记 CRUD ----
 admin.get('/diaries', async (c) => {
-  const { results } = await c.env.DB.prepare(
-    `SELECT d.id, d.title, d.title_en, d.slug, d.status, d.cover_filename, d.published_at, d.created_at, d.updated_at,
-            c.id AS category_id, c.name AS category_name
-     FROM diaries d LEFT JOIN diary_categories c ON c.id = d.category_id ORDER BY d.id DESC`
-  ).all();
-  return c.json(results);
+  const pagination = parsePagination(c, 20, 100);
+  const search = searchFilter(c, ['d.title', 'd.title_en']);
+  const base = `FROM diaries d LEFT JOIN diary_categories c ON c.id = d.category_id WHERE 1=1${search.where}`;
+  const cols = `d.id, d.title, d.title_en, d.slug, d.status, d.cover_filename, d.published_at, d.created_at, d.updated_at,
+                c.id AS category_id, c.name AS category_name`;
+  if (!pagination.requested) {
+    const { results } = await c.env.DB.prepare(`SELECT ${cols} ${base} ORDER BY d.id DESC`)
+      .bind(...search.args).all();
+    return c.json(results);
+  }
+  const total = await c.env.DB.prepare(`SELECT COUNT(*) AS n ${base}`)
+    .bind(...search.args).first<{ n: number }>();
+  const { results } = await c.env.DB.prepare(`SELECT ${cols} ${base} ORDER BY d.id DESC LIMIT ? OFFSET ?`)
+    .bind(...search.args, pagination.size, pagination.offset).all();
+  return c.json({ items: results, total: total?.n ?? 0, page: pagination.page, size: pagination.size });
 });
 
 admin.get('/diaries/:id', async (c) => {
@@ -668,6 +720,8 @@ admin.post('/messages/:id/hide', async (c) => {
 });
 
 admin.delete('/messages/:id', async (c) => {
+  // 先清理 notifications 引用，避免外键约束报错
+  await c.env.DB.prepare('DELETE FROM notifications WHERE message_id = ?').bind(c.req.param('id')).run();
   await c.env.DB.prepare('DELETE FROM messages WHERE id = ?').bind(c.req.param('id')).run();
   await logAudit(c.env.DB, 'message_review', (c.get('admin') as { username: string }).username, `删除留言#${c.req.param('id')}`);
   return c.json({ ok: true });

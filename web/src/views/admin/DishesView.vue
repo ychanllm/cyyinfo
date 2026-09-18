@@ -2,12 +2,17 @@
 import { ref, onMounted } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { api } from '../../api';
+import AdminListBar from '../../components/AdminListBar.vue';
 
 const { t } = useI18n();
 
 const dishes = ref([]);
 const loading = ref(false);
 const error = ref('');
+const page = ref(1);
+const size = 20;
+const total = ref(0);
+const keyword = ref('');
 
 // ---- 新建 / 编辑表单 ----
 const formOpen = ref(false);
@@ -25,7 +30,9 @@ async function load() {
   loading.value = true;
   error.value = '';
   try {
-    dishes.value = await api('/admin/dishes', { admin: true });
+    const data = await api(`/admin/dishes?page=${page.value}&size=${size}&q=${encodeURIComponent(keyword.value)}`, { admin: true });
+    dishes.value = data.items;
+    total.value = data.total;
   } catch (e) {
     error.value = e.message;
   } finally {
@@ -34,6 +41,17 @@ async function load() {
 }
 
 onMounted(load);
+
+function onSearch(q) {
+  keyword.value = q;
+  page.value = 1;
+  load();
+}
+
+function onPage(p) {
+  page.value = p;
+  load();
+}
 
 function toggleExpand(id) {
   const s = new Set(expanded.value);
@@ -123,6 +141,8 @@ async function remove(d) {
 
     <p v-if="error" class="error">{{ error }}</p>
     <p v-if="loading" class="hint">{{ t('adminDishes.loading') }}</p>
+
+    <AdminListBar :total="total" :page="page" :size="20" @search="onSearch" @page="onPage" />
 
     <section class="card">
       <p v-if="!loading && !dishes.length" class="hint">{{ t('adminDishes.empty') }}</p>
