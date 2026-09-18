@@ -11,6 +11,7 @@ export const DEFAULT_NAV = [
   { key: 'prizes', path: '/admin/prizes', labelKey: 'admin.prizes' },
   { key: 'prize-records', path: '/admin/prize-records', labelKey: 'admin.prizeRecords' },
   { key: 'users', path: '/admin/users', labelKey: 'admin.users' },
+  { key: 'permissions', path: '/admin/permissions', labelKey: 'admin.permissions' },
   { key: 'changelog', path: '/admin/changelog', labelKey: 'admin.changelog' },
   { key: 'settings', path: '/admin/settings', labelKey: 'admin.settings' },
 ];

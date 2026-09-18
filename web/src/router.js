@@ -41,6 +41,7 @@ const routes = [
       { path: 'stores', name: 'admin-stores', component: () => import('./views/admin/StoresView.vue') },
       { path: 'messages', name: 'admin-messages', component: () => import('./views/admin/MessagesView.vue') },
       { path: 'users', name: 'admin-users', component: () => import('./views/admin/UsersView.vue') },
+      { path: 'permissions', name: 'admin-permissions', component: () => import('./views/admin/PermissionsView.vue') },
       { path: 'settings', name: 'admin-settings', component: () => import('./views/admin/SettingsView.vue') },
       { path: 'prizes', name: 'admin-prizes', component: () => import('./views/admin/AdminPrizesView.vue') },
       { path: 'prize-records', name: 'admin-prize-records', component: () => import('./views/admin/AdminPrizeRecordsView.vue') },
