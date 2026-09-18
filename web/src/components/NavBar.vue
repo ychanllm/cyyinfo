@@ -32,16 +32,23 @@ watch(() => route.fullPath, () => {
   }
 });
 
-const links = computed(() => [
-  { to: localize('/'), label: t('nav.home'), icon: '🏠', exact: true },
-  { to: localize('/albums'), label: t('nav.albums'), icon: '📷' },
-  { to: localize('/diaries'), label: t('nav.diaries'), icon: '📔' },
-  { to: localize('/leaderboard'), label: t('nav.ranking'), icon: '🏆' },
-  { to: localize('/music'), label: t('nav.music'), icon: '🎵' },
-  { to: localize('/points'), label: t('nav.points'), icon: '📅' },
-  { to: localize('/dishes'), label: t('nav.dishes'), icon: '🍲' },
-  { to: localize('/stores'), label: t('nav.stores'), icon: '🧭' },
-]);
+const links = computed(() => {
+  const base = [
+    { to: localize('/'), label: t('nav.home'), icon: '🏠', exact: true },
+    { to: localize('/albums'), label: t('nav.albums'), icon: '📷' },
+    { to: localize('/diaries'), label: t('nav.diaries'), icon: '📔' },
+    { to: localize('/leaderboard'), label: t('nav.ranking'), icon: '🏆' },
+    { to: localize('/music'), label: t('nav.music'), icon: '🎵' },
+    { to: localize('/points'), label: t('nav.points'), icon: '📅' },
+    { to: localize('/dishes'), label: t('nav.dishes'), icon: '🍲' },
+    { to: localize('/stores'), label: t('nav.stores'), icon: '🧭' },
+  ];
+  // 获权用户（有日记/相册权限）显示后台内容管理入口
+  if (me.value?.permissions?.length) {
+    base.push({ to: localize('/admin'), label: t('nav.adminEntry'), icon: '🛠️' });
+  }
+  return base;
+});
 </script>
 
 <template>

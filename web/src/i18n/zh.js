@@ -11,6 +11,7 @@ export default {
     ranking: '排行',
     dishes: '点菜',
     stores: '探店',
+    adminEntry: '内容管理',
     defaultSiteName: '我们的小站',
   },
   dishes: {
