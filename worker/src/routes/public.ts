@@ -113,18 +113,18 @@ content.get('/diaries', async (c) => {
     `SELECT COUNT(*) AS n FROM diaries d WHERE d.status = 'published' ${categorySql}`
   ).bind(...catArgs).first<{ n: number }>();
   const listSql = isEn
-    ? `SELECT d.id, d.slug, d.cover_filename, d.published_at, u.display_name AS author,
+    ? `SELECT d.id, d.slug, d.cover_filename, d.published_at, COALESCE(u.display_name, uu.username) AS author,
               c.id AS category_id, COALESCE(NULLIF(c.name_en,''), c.name) AS category_name,
               COALESCE(NULLIF(d.title_en,''), d.title) AS title,
               substr(COALESCE(NULLIF(d.content_md_en,''), d.content_md), 1, 200) AS excerpt
-       FROM diaries d JOIN admin_users u ON u.id = d.author_id
+       FROM diaries d LEFT JOIN admin_users u ON u.id = d.author_id LEFT JOIN users uu ON uu.id = d.author_user_id
        LEFT JOIN diary_categories c ON c.id = d.category_id
        WHERE d.status = 'published' ${categorySql}
        ORDER BY d.published_at DESC LIMIT ? OFFSET ?`
-    : `SELECT d.id, d.title, d.slug, d.cover_filename, d.published_at, u.display_name AS author,
+    : `SELECT d.id, d.title, d.slug, d.cover_filename, d.published_at, COALESCE(u.display_name, uu.username) AS author,
               c.id AS category_id, c.name AS category_name,
               substr(d.content_md, 1, 200) AS excerpt
-       FROM diaries d JOIN admin_users u ON u.id = d.author_id
+       FROM diaries d LEFT JOIN admin_users u ON u.id = d.author_id LEFT JOIN users uu ON uu.id = d.author_user_id
        LEFT JOIN diary_categories c ON c.id = d.category_id
        WHERE d.status = 'published' ${categorySql}
        ORDER BY d.published_at DESC LIMIT ? OFFSET ?`;
@@ -153,16 +153,16 @@ content.get('/diaries/:slugOrId', async (c) => {
   const key = c.req.param('slugOrId');
   const isId = /^\d+$/.test(key);
   const sql = isEn
-    ? `SELECT d.id, d.slug, d.cover_filename, d.published_at, u.display_name AS author,
+    ? `SELECT d.id, d.slug, d.cover_filename, d.published_at, COALESCE(u.display_name, uu.username) AS author,
               c.id AS category_id, COALESCE(NULLIF(c.name_en,''), c.name) AS category_name,
               COALESCE(NULLIF(d.title_en,''), d.title) AS title,
               COALESCE(NULLIF(d.content_md_en,''), d.content_md) AS content_md
-       FROM diaries d JOIN admin_users u ON u.id = d.author_id
+       FROM diaries d LEFT JOIN admin_users u ON u.id = d.author_id LEFT JOIN users uu ON uu.id = d.author_user_id
        LEFT JOIN diary_categories c ON c.id = d.category_id
        WHERE d.status = 'published' AND ${isId ? 'd.id = ?' : 'd.slug = ?'}`
-    : `SELECT d.id, d.title, d.slug, d.content_md, d.cover_filename, d.published_at, u.display_name AS author,
+    : `SELECT d.id, d.title, d.slug, d.content_md, d.cover_filename, d.published_at, COALESCE(u.display_name, uu.username) AS author,
               c.id AS category_id, c.name AS category_name
-       FROM diaries d JOIN admin_users u ON u.id = d.author_id
+       FROM diaries d LEFT JOIN admin_users u ON u.id = d.author_id LEFT JOIN users uu ON uu.id = d.author_user_id
        LEFT JOIN diary_categories c ON c.id = d.category_id
        WHERE d.status = 'published' AND ${isId ? 'd.id = ?' : 'd.slug = ?'}`;
   const d = await c.env.DB.prepare(sql).bind(key).first();

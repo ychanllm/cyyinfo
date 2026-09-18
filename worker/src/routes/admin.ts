@@ -383,8 +383,8 @@ admin.post('/diaries', async (c) => {
   }
   const publishedAt = status === 'published' ? new Date().toISOString() : null;
   const r = await c.env.DB.prepare(
-    'INSERT INTO diaries (author_id, title, title_en, slug, content_md, content_md_en, status, published_at, category_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
-  ).bind(adminUser?.id ?? null, title, title_en || null, slug, content_md, content_md_en || null, status, publishedAt, category_id || null).run();
+    'INSERT INTO diaries (author_id, author_user_id, title, title_en, slug, content_md, content_md_en, status, published_at, category_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+  ).bind(adminUser?.id ?? null, loginUser?.id ?? null, title, title_en || null, slug, content_md, content_md_en || null, status, publishedAt, category_id || null).run();
   const diaryId = r.meta.last_row_id;
   // 创建即第 1 次编辑
   await c.env.DB.prepare('INSERT INTO diary_versions (diary_id, version, title, content_md) VALUES (?, 1, ?, ?)')

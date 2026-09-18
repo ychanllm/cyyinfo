@@ -78,3 +78,28 @@ describe('内容权限中间件', () => {
     await SELF.fetch(`http://x/api/admin/albums/${albumId}`, { method: 'DELETE', headers: adminAuth() });
   });
 });
+
+describe('用户日记作者归属', () => {
+  it('获权用户创建并发布日记，公开列表/详情作者显示其用户名', async () => {
+    const u = await registerUser('perm_author');
+    await grant(u.id, 'diary');
+    const create = await SELF.fetch('http://x/api/admin/diaries', {
+      method: 'POST', headers: userAuth(u.token),
+      body: JSON.stringify({ title: '用户日记', slug: 'perm-author-diary', status: 'published', content_md: '正文' }),
+    });
+    expect(create.status).toBe(200);
+    const { id } = await create.json() as any;
+
+    const list = await SELF.fetch('http://x/api/diaries');
+    const item = ((await list.json() as any).items as any[]).find((x) => x.slug === 'perm-author-diary');
+    expect(item).toBeTruthy();
+    expect(item.author).toBe('perm_author');
+
+    const detail = await SELF.fetch('http://x/api/diaries/perm-author-diary');
+    expect((await detail.json() as any).author).toBe('perm_author');
+
+    // 清理（用户自己删，验证 delete 也被 contentAuth 放行）
+    const del = await SELF.fetch(`http://x/api/admin/diaries/${id}`, { method: 'DELETE', headers: userAuth(u.token) });
+    expect(del.status).toBe(200);
+  });
+});
