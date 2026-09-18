@@ -46,6 +46,7 @@ onMounted(load);
       <thead>
         <tr>
           <th>{{ t('adminPerms.user') }}</th>
+          <th>{{ t('adminPerms.createdAt') }}</th>
           <th>{{ t('adminPerms.diary') }}</th>
           <th>{{ t('adminPerms.album') }}</th>
         </tr>
@@ -53,6 +54,7 @@ onMounted(load);
       <tbody>
         <tr v-for="u in users" :key="u.id">
           <td>{{ u.username }}</td>
+          <td>{{ (u.created_at || '').slice(0, 10) }}</td>
           <td>
             <input
               type="checkbox"

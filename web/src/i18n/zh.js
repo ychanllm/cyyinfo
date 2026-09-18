@@ -247,6 +247,7 @@ export default {
     title: '权限管理',
     desc: '授予注册用户上传、管理日记和相册的权限，获权用户登录后可进入后台对应栏目。',
     user: '用户',
+    createdAt: '注册时间',
     diary: '日记上传',
     album: '相册上传',
     empty: '还没有注册用户',
