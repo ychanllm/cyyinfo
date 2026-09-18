@@ -1,7 +1,7 @@
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import bcrypt from 'bcryptjs';
 import type { AppEnv, Env } from '../types';
-import { signJwt, adminAuth } from '../auth';
+import { signJwt, adminAuth, contentAuth } from '../auth';
 import { getSetting, setSetting } from '../guard';
 import { enforceRateLimit, clientIp } from '../security';
 import { saveUpload } from '../upload';
@@ -13,6 +13,14 @@ interface AdminUserRow {
   password_hash: string;
   display_name: string;
   auth_version: number;
+}
+
+// 审计操作人：管理员记用户名；获权用户操作日记/相册时记 user:<用户名>
+function actorName(c: Context<AppEnv>): string {
+  const a = c.get('admin') as { username: string } | undefined;
+  if (a) return a.username;
+  const u = c.get('user') as { username: string } | undefined;
+  return u ? `user:${u.username}` : 'unknown';
 }
 
 const admin = new Hono<AppEnv>();
@@ -47,16 +55,16 @@ admin.post('/login', async (c) => {
 });
 
 // 受保护子路由在此挂载（后续任务）：admin.use('/users/*', adminAuth) 等
-admin.use('/albums', adminAuth);
-admin.use('/albums/*', adminAuth);
-admin.use('/photos', adminAuth);
-admin.use('/photos/*', adminAuth);
+admin.use('/albums', contentAuth('album'));
+admin.use('/albums/*', contentAuth('album'));
+admin.use('/photos', contentAuth('album'));
+admin.use('/photos/*', contentAuth('album'));
 admin.use('/users', adminAuth);
 admin.use('/users/*', adminAuth);
-admin.use('/diaries', adminAuth);
-admin.use('/diaries/*', adminAuth);
-admin.use('/diary-categories', adminAuth);
-admin.use('/diary-categories/*', adminAuth);
+admin.use('/diaries', contentAuth('diary'));
+admin.use('/diaries/*', contentAuth('diary'));
+admin.use('/diary-categories', contentAuth('diary'));
+admin.use('/diary-categories/*', contentAuth('diary'));
 admin.use('/music', adminAuth);
 admin.use('/music/*', adminAuth);
 admin.use('/messages', adminAuth);
@@ -236,7 +244,7 @@ admin.post('/albums', async (c) => {
   if (!title) return c.json({ detail: '标题必填' }, 400);
   const r = await c.env.DB.prepare('INSERT INTO albums (title, title_en, description, description_en, sort_order) VALUES (?, ?, ?, ?, ?)')
     .bind(title, title_en || null, description, description_en || null, sort_order).run();
-  await logAudit(c.env.DB, 'album_create', (c.get('admin') as { username: string }).username, `创建相册「${title}」`);
+  await logAudit(c.env.DB, 'album_create', actorName(c), `创建相册「${title}」`);
   return c.json({ id: r.meta.last_row_id, title, description, sort_order });
 });
 
@@ -252,7 +260,7 @@ admin.put('/albums/:id', async (c) => {
   if (!setParts.length) return c.json({ ok: true });
   params.push(Number(c.req.param('id')));
   await c.env.DB.prepare(`UPDATE albums SET ${setParts.join(', ')} WHERE id = ?`).bind(...params).run();
-  await logAudit(c.env.DB, 'album_update', (c.get('admin') as { username: string }).username, `更新相册#${c.req.param('id')}`);
+  await logAudit(c.env.DB, 'album_update', actorName(c), `更新相册#${c.req.param('id')}`);
   return c.json({ ok: true });
 });
 
@@ -262,7 +270,7 @@ admin.delete('/albums/:id', async (c) => {
     .bind(c.req.param('id')).all<{ filename: string }>();
   for (const p of results) await c.env.UPLOADS.delete(p.filename);
   await c.env.DB.prepare('DELETE FROM albums WHERE id = ?').bind(c.req.param('id')).run();
-  await logAudit(c.env.DB, 'album_delete', (c.get('admin') as { username: string }).username, `删除相册#${c.req.param('id')}`);
+  await logAudit(c.env.DB, 'album_delete', actorName(c), `删除相册#${c.req.param('id')}`);
   return c.json({ ok: true });
 });
 
@@ -296,7 +304,7 @@ admin.post('/photos', async (c) => {
   if (error) return c.json({ detail: error }, 400);
   const r = await c.env.DB.prepare('INSERT INTO photos (album_id, filename, caption, caption_en) VALUES (?, ?, ?, ?)')
     .bind(albumId, key!, caption, captionEn || null).run();
-  await logAudit(c.env.DB, 'photo_upload', (c.get('admin') as { username: string }).username, `上传照片到相册#${albumId}`);
+  await logAudit(c.env.DB, 'photo_upload', actorName(c), `上传照片到相册#${albumId}`);
   return c.json({ id: r.meta.last_row_id, filename: key, album_id: albumId, caption });
 });
 
@@ -327,7 +335,7 @@ admin.put('/photos/:id', async (c) => {
   }
   if (hidden !== undefined && Boolean(hidden) !== Boolean(photo.hidden)) {
     await logAudit(c.env.DB, hidden ? 'photo_hide' : 'photo_unhide',
-      (c.get('admin') as { username: string }).username, `${hidden ? '隐藏' : '恢复'}照片#${c.req.param('id')}`);
+      actorName(c), `${hidden ? '隐藏' : '恢复'}照片#${c.req.param('id')}`);
   }
   return c.json({ ok: true });
 });
@@ -337,7 +345,7 @@ admin.delete('/photos/:id', async (c) => {
     .bind(c.req.param('id')).first<{ filename: string }>();
   if (photo) await c.env.UPLOADS.delete(photo.filename);
   await c.env.DB.prepare('DELETE FROM photos WHERE id = ?').bind(c.req.param('id')).run();
-  await logAudit(c.env.DB, 'photo_delete', (c.get('admin') as { username: string }).username, `删除照片#${c.req.param('id')}`);
+  await logAudit(c.env.DB, 'photo_delete', actorName(c), `删除照片#${c.req.param('id')}`);
   return c.json({ ok: true });
 });
 
@@ -361,7 +369,8 @@ admin.get('/diaries/:id', async (c) => {
 });
 
 admin.post('/diaries', async (c) => {
-  const adminUser = c.get('admin') as { id: number };
+  const adminUser = c.get('admin') as { id: number } | undefined;
+  const loginUser = c.get('user') as { id: number } | undefined;
   const { title, title_en, content_md = '', content_md_en, slug = null, status = 'draft', category_id = null } = await c.req.json();
   if (!title) return c.json({ detail: '标题必填' }, 400);
   if (slug) {
@@ -375,12 +384,12 @@ admin.post('/diaries', async (c) => {
   const publishedAt = status === 'published' ? new Date().toISOString() : null;
   const r = await c.env.DB.prepare(
     'INSERT INTO diaries (author_id, title, title_en, slug, content_md, content_md_en, status, published_at, category_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
-  ).bind(adminUser.id, title, title_en || null, slug, content_md, content_md_en || null, status, publishedAt, category_id || null).run();
+  ).bind(adminUser?.id ?? null, title, title_en || null, slug, content_md, content_md_en || null, status, publishedAt, category_id || null).run();
   const diaryId = r.meta.last_row_id;
   // 创建即第 1 次编辑
   await c.env.DB.prepare('INSERT INTO diary_versions (diary_id, version, title, content_md) VALUES (?, 1, ?, ?)')
     .bind(diaryId, title, content_md).run();
-  await logAudit(c.env.DB, 'diary_create', (c.get('admin') as { username: string }).username, `创建日记「${title}」`);
+  await logAudit(c.env.DB, 'diary_create', actorName(c), `创建日记「${title}」`);
   return c.json({ id: diaryId });
 });
 
@@ -430,7 +439,7 @@ admin.put('/diaries/:id', async (c) => {
     await c.env.DB.prepare('INSERT INTO diary_versions (diary_id, version, title, content_md) VALUES (?, ?, ?, ?)')
       .bind(diaryId, nextVersion, newTitle, newContent).run();
   }
-  await logAudit(c.env.DB, 'diary_update', (c.get('admin') as { username: string }).username,
+  await logAudit(c.env.DB, 'diary_update', actorName(c),
     `更新日记#${diaryId}${status ? `（状态→${status}）` : ''}`);
   return c.json({ ok: true });
 });
@@ -440,7 +449,7 @@ admin.delete('/diaries/:id', async (c) => {
     .bind(c.req.param('id')).first<{ cover_filename: string | null }>();
   if (d?.cover_filename) await c.env.UPLOADS.delete(d.cover_filename);
   await c.env.DB.prepare('DELETE FROM diaries WHERE id = ?').bind(c.req.param('id')).run();
-  await logAudit(c.env.DB, 'diary_delete', (c.get('admin') as { username: string }).username, `删除日记#${c.req.param('id')}`);
+  await logAudit(c.env.DB, 'diary_delete', actorName(c), `删除日记#${c.req.param('id')}`);
   return c.json({ ok: true });
 });
 

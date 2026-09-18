@@ -18,12 +18,14 @@ export async function adminToken(): Promise<string> {
   return cachedToken!;
 }
 
-// 注册测试用户并返回 {id, token}；注册接口限流 30 次/15 分钟，够用但不要滥用
+// 注册测试用户并返回 {id, token}；注册接口限流 30 次/15 分钟（按 CF-Connecting-IP 分桶），
+// 全量测试共享同一 runtime，累计注册数已达上限，故每次调用用独立 IP 桶避免夹具注册挤占真实限流用例
+let registerIpSeq = 0;
 export async function registerUser(username: string): Promise<{ id: number; token: string }> {
   const { SELF } = await import('cloudflare:test');
   const res = await SELF.fetch('http://x/api/auth/register', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'CF-Connecting-IP': `10.255.0.${(registerIpSeq++) % 250 + 1}` },
     body: JSON.stringify({ username, password: 'secret6' }),
   });
   const data = (await res.json()) as any;
