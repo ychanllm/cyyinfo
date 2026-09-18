@@ -75,6 +75,8 @@ admin.use('/site-users', adminAuth);
 admin.use('/site-users/*', adminAuth);
 admin.use('/changelogs', adminAuth);
 admin.use('/changelogs/*', adminAuth);
+admin.use('/permissions', adminAuth);
+admin.use('/permissions/*', adminAuth);
 admin.use('/audit-logs', adminAuth);
 admin.use('/stats', adminAuth);
 
@@ -163,6 +165,37 @@ admin.get('/site-users/:id/point-transactions', async (c) => {
      WHERE t.user_id = ? ORDER BY t.id DESC LIMIT 200`
   ).bind(userId).all();
   return c.json(results);
+});
+
+// ---- 用户内容权限（日记/相册上传管理）----
+admin.get('/permissions', async (c) => {
+  const { results } = await c.env.DB.prepare(
+    `SELECT u.id, u.username, u.created_at,
+            MAX(CASE WHEN p.permission = 'diary' THEN 1 ELSE 0 END) AS diary,
+            MAX(CASE WHEN p.permission = 'album' THEN 1 ELSE 0 END) AS album
+     FROM users u LEFT JOIN user_permissions p ON p.user_id = u.id
+     GROUP BY u.id ORDER BY u.id`
+  ).all();
+  return c.json(results);
+});
+
+// 全量覆盖某用户的授权：{ diary: bool, album: bool }，缺省视为 false
+admin.put('/permissions/:userId', async (c) => {
+  const userId = Number(c.req.param('userId'));
+  const target = await c.env.DB.prepare('SELECT id, username FROM users WHERE id = ?')
+    .bind(userId).first<{ id: number; username: string }>();
+  if (!target) return c.json({ detail: '用户不存在' }, 404);
+  const { diary = false, album = false } = await c.req.json<{ diary?: boolean; album?: boolean }>();
+  const me = c.get('admin') as { id: number; username: string };
+  const stmts = [
+    c.env.DB.prepare('DELETE FROM user_permissions WHERE user_id = ?').bind(userId),
+  ];
+  if (diary) stmts.push(c.env.DB.prepare('INSERT INTO user_permissions (user_id, permission, granted_by) VALUES (?, ?, ?)').bind(userId, 'diary', me.id));
+  if (album) stmts.push(c.env.DB.prepare('INSERT INTO user_permissions (user_id, permission, granted_by) VALUES (?, ?, ?)').bind(userId, 'album', me.id));
+  await c.env.DB.batch(stmts);
+  await logAudit(c.env.DB, 'permission_update', me.username,
+    `更新用户 ${target.username} 权限：日记=${diary ? '开' : '关'}，相册=${album ? '开' : '关'}`);
+  return c.json({ ok: true });
 });
 
 // ---- 站点设置 ----

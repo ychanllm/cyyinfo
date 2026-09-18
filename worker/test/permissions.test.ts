@@ -103,3 +103,48 @@ describe('用户日记作者归属', () => {
     expect(del.status).toBe(200);
   });
 });
+
+describe('权限管理 API', () => {
+  it('管理员授予/撤销权限；非管理员与用户令牌访问返回 401', async () => {
+    const u = await registerUser('perm_api');
+
+    // 用户令牌不能调权限管理接口
+    const denied = await SELF.fetch('http://x/api/admin/permissions', { headers: userAuth(u.token) });
+    expect(denied.status).toBe(401);
+
+    // 授予 diary
+    const put = await SELF.fetch(`http://x/api/admin/permissions/${u.id}`, {
+      method: 'PUT', headers: adminAuth(), body: JSON.stringify({ diary: true, album: false }),
+    });
+    expect(put.status).toBe(200);
+
+    let list = await (await SELF.fetch('http://x/api/admin/permissions', { headers: adminAuth() })).json() as any[];
+    let row = list.find((r) => r.id === u.id);
+    expect(row.diary).toBe(1);
+    expect(row.album).toBe(0);
+    // 授予生效
+    expect((await SELF.fetch('http://x/api/admin/diaries', { headers: userAuth(u.token) })).status).toBe(200);
+
+    // 全量覆盖为 album，diary 被撤销
+    await SELF.fetch(`http://x/api/admin/permissions/${u.id}`, {
+      method: 'PUT', headers: adminAuth(), body: JSON.stringify({ diary: false, album: true }),
+    });
+    list = await (await SELF.fetch('http://x/api/admin/permissions', { headers: adminAuth() })).json() as any[];
+    row = list.find((r) => r.id === u.id);
+    expect(row.diary).toBe(0);
+    expect(row.album).toBe(1);
+    expect((await SELF.fetch('http://x/api/admin/diaries', { headers: userAuth(u.token) })).status).toBe(401);
+    expect((await SELF.fetch('http://x/api/admin/albums', { headers: userAuth(u.token) })).status).toBe(200);
+
+    // 不存在的用户
+    const missing = await SELF.fetch('http://x/api/admin/permissions/999999', {
+      method: 'PUT', headers: adminAuth(), body: JSON.stringify({ diary: true }),
+    });
+    expect(missing.status).toBe(404);
+
+    // 清理
+    await SELF.fetch(`http://x/api/admin/permissions/${u.id}`, {
+      method: 'PUT', headers: adminAuth(), body: JSON.stringify({ diary: false, album: false }),
+    });
+  });
+});
