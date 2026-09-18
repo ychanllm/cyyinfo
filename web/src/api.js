@@ -20,7 +20,7 @@ async function request(path, { method = 'GET', body, admin = false, form = null 
   // 管理员无用户 token 时回退管理员 token（可免口令浏览公开页、点赞记到归属用户）；最后访客口令 token
   const userToken = getUserToken();
   const adminToken = getAdminToken();
-  const token = admin ? adminToken : (userToken || adminToken || getGuestToken());
+  const token = admin ? (adminToken || userToken) : (userToken || adminToken || getGuestToken());
   if (token) headers.Authorization = `Bearer ${token}`;
   let payload;
   if (form) {
@@ -43,7 +43,8 @@ async function request(path, { method = 'GET', body, admin = false, form = null 
     }
     // 按本次请求实际发送的 token 分流：发了管理员 token 才按管理员会话失效处理，
     // 否则按用户/访客处理（浏览器里有管理员 token 不代表这次请求用的是它）
-    if (admin || (!userToken && adminToken)) {
+    const usedAdminToken = admin ? Boolean(adminToken) : (!userToken && Boolean(adminToken));
+    if (usedAdminToken) {
       // 管理员会话失效：清管理员 token，回管理员登录页（已登录管理员不应被抛到访客门禁页）
       clearAdminToken();
       if (!location.pathname.startsWith('/admin/login')) location.href = '/admin/login';

@@ -5,19 +5,28 @@ import { useI18n } from 'vue-i18n';
 import PhotosView from './PhotosView.vue';
 import DiariesView from './DiariesView.vue';
 import MusicView from './MusicView.vue';
+import { getAdminToken } from '../../api';
+import { me } from '../../me';
 
 const { t } = useI18n();
 const route = useRoute();
 const router = useRouter();
 
-const tabs = [
-  { key: 'photos', labelKey: 'admin.photos', component: PhotosView },
-  { key: 'diaries', labelKey: 'admin.diaries', component: DiariesView },
-  { key: 'music', labelKey: 'admin.music', component: MusicView },
+const allTabs = [
+  { key: 'photos', labelKey: 'admin.photos', component: PhotosView, perm: 'album' },
+  { key: 'diaries', labelKey: 'admin.diaries', component: DiariesView, perm: 'diary' },
+  { key: 'music', labelKey: 'admin.music', component: MusicView, perm: null },
 ];
 
-const active = computed(() => (tabs.some((x) => x.key === route.query.tab) ? route.query.tab : 'photos'));
-const activeComponent = computed(() => tabs.find((x) => x.key === active.value).component);
+// 管理员看全部；获权用户只看有权限的 tab（music 仅管理员）
+const tabs = computed(() => {
+  if (getAdminToken()) return allTabs;
+  const perms = me.value?.permissions ?? [];
+  return allTabs.filter((x) => x.perm && perms.includes(x.perm));
+});
+
+const active = computed(() => (tabs.value.some((x) => x.key === route.query.tab) ? route.query.tab : tabs.value[0]?.key));
+const activeComponent = computed(() => tabs.value.find((x) => x.key === active.value)?.component);
 
 // 切换 tab 用 replace 写 query,不产生历史记录;:key 强制重挂载以重新拉数据
 function switchTab(key) {

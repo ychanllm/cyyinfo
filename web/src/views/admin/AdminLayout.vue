@@ -2,23 +2,37 @@
 import { computed, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
-import { clearAdminToken } from '../../api';
+import { getAdminToken, clearAdminToken } from '../../api';
 import { localize } from '../../i18n';
 import { navOrder, applyNavOrder, loadNavOrder } from '../../utils/admin-nav';
+import { me, loadMe } from '../../me';
 import MiniPlayer from '../../components/MiniPlayer.vue';
 
 const { t } = useI18n();
 const router = useRouter();
 
-const navItems = computed(() =>
-  applyNavOrder(navOrder.value).map((item) => ({ to: localize(item.path), label: t(item.labelKey) }))
-);
+// 无管理员令牌时按获权用户处理：只看到「素材」栏目（具体 tab 由 MediaView 按权限再过滤）
+const isAdmin = Boolean(getAdminToken());
+const navItems = computed(() => {
+  let items = applyNavOrder(navOrder.value);
+  if (!isAdmin) items = items.filter((item) => item.key === 'media');
+  return items.map((item) => ({ to: localize(item.path), label: t(item.labelKey) }));
+});
 
-onMounted(loadNavOrder);
+// 自定义排序设置是管理员接口，获权用户调用会 401，仅在管理员身份下加载
+onMounted(() => {
+  if (isAdmin) loadNavOrder();
+  else if (!me.value) loadMe();
+});
 
 function logout() {
-  clearAdminToken();
-  router.replace(localize('/admin/login'));
+  if (isAdmin) {
+    clearAdminToken();
+    router.replace(localize('/admin/login'));
+  } else {
+    // 获权用户退出后台：保留站点登录态，回前台首页
+    router.replace(localize('/'));
+  }
 }
 </script>
 

@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router';
 import { api, getGuestToken, getAdminToken, getUserToken } from './api';
 import { i18n } from './i18n';
 import { loadSiteStatus } from './site-status';
+import { me, loadMe } from './me';
 
 const routes = [
   { path: '/', name: 'home', component: () => import('./views/HomeView.vue') },
@@ -84,9 +85,15 @@ router.beforeEach(async (to) => {
   if (to.meta.user && !getUserToken()) {
     return { name: 'login', query: { redirect: to.fullPath } };
   }
-  // 后台守卫
+  // 后台守卫：管理员令牌直接放行；注册用户持有日记/相册权限也可进入（只看到对应栏目）
   if (to.meta.admin) {
-    return getAdminToken() ? true : { name: 'admin-login', query: { redirect: to.fullPath } };
+    if (getAdminToken()) return true;
+    if (getUserToken()) {
+      if (!me.value) await loadMe();
+      if (me.value?.permissions?.length) return true;
+      return { path: '/' };
+    }
+    return { name: 'admin-login', query: { redirect: to.fullPath } };
   }
   // 访客口令守卫：已登录管理员可免口令浏览公开页
   if (passcodeEnabled === null) {
