@@ -16,17 +16,17 @@ async function revokeAll(userId: number) {
 }
 
 describe('内容权限中间件', () => {
-  it('无权限用户访问日记/相册后台路由返回 401，管理员不受影响', async () => {
+  it('无权限用户访问日记/相册后台路由返回 403，管理员不受影响', async () => {
     const u = await registerUser('perm_none');
     const d = await SELF.fetch('http://x/api/admin/diaries', { headers: userAuth(u.token) });
-    expect(d.status).toBe(401);
+    expect(d.status).toBe(403);
     const a = await SELF.fetch('http://x/api/admin/albums', { headers: userAuth(u.token) });
-    expect(a.status).toBe(401);
+    expect(a.status).toBe(403);
     const ok = await SELF.fetch('http://x/api/admin/diaries', { headers: adminAuth() });
     expect(ok.status).toBe(200);
   });
 
-  it('diary 权限用户可访问日记与分类路由，但相册与其余后台路由仍 401', async () => {
+  it('diary 权限用户可访问日记与分类路由，但相册路由 403、其余后台路由仍 401', async () => {
     const u = await registerUser('perm_diary');
     await grant(u.id, 'diary');
     const d = await SELF.fetch('http://x/api/admin/diaries', { headers: userAuth(u.token) });
@@ -34,14 +34,14 @@ describe('内容权限中间件', () => {
     const cats = await SELF.fetch('http://x/api/admin/diary-categories', { headers: userAuth(u.token) });
     expect(cats.status).toBe(200);
     const a = await SELF.fetch('http://x/api/admin/albums', { headers: userAuth(u.token) });
-    expect(a.status).toBe(401);
+    expect(a.status).toBe(403);
     const users = await SELF.fetch('http://x/api/admin/site-users', { headers: userAuth(u.token) });
     expect(users.status).toBe(401);
     const settings = await SELF.fetch('http://x/api/admin/settings', { headers: userAuth(u.token) });
     expect(settings.status).toBe(401);
   });
 
-  it('album 权限用户可上传照片到相册，撤销后立即 401', async () => {
+  it('album 权限用户可上传照片到相册，撤销后立即 403', async () => {
     const u = await registerUser('perm_album');
     // 管理员建相册
     const alb = await SELF.fetch('http://x/api/admin/albums', {
@@ -71,7 +71,7 @@ describe('内容权限中间件', () => {
     const denied = await SELF.fetch('http://x/api/admin/photos', {
       method: 'POST', headers: { Authorization: `Bearer ${u.token}` }, body: form,
     });
-    expect(denied.status).toBe(401);
+    expect(denied.status).toBe(403);
 
     // 清理（管理员）
     await SELF.fetch(`http://x/api/admin/photos/${photo.id}`, { method: 'DELETE', headers: adminAuth() });
@@ -133,7 +133,7 @@ describe('权限管理 API', () => {
     row = list.find((r) => r.id === u.id);
     expect(row.diary).toBe(0);
     expect(row.album).toBe(1);
-    expect((await SELF.fetch('http://x/api/admin/diaries', { headers: userAuth(u.token) })).status).toBe(401);
+    expect((await SELF.fetch('http://x/api/admin/diaries', { headers: userAuth(u.token) })).status).toBe(403);
     expect((await SELF.fetch('http://x/api/admin/albums', { headers: userAuth(u.token) })).status).toBe(200);
 
     // 不存在的用户

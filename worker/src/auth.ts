@@ -87,7 +87,7 @@ export function contentAuth(permission: 'diary' | 'album') {
       }
       const perm = await c.env.DB.prepare('SELECT 1 AS ok FROM user_permissions WHERE user_id = ? AND permission = ?')
         .bind(id, permission).first();
-      if (!perm) return c.json({ detail: '未授权' }, 401);
+      if (!perm) return c.json({ detail: '没有权限' }, 403);
       c.set('user', { id: account.id, username: account.username });
       await next();
       return;
