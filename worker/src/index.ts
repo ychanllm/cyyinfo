@@ -8,6 +8,7 @@ import pointsRoutes from './routes/points';
 import notificationRoutes from './routes/notifications';
 import likesRoutes from './routes/likes';
 import adminPrizesRoutes from './routes/adminPrizes';
+import adminFilesRoutes from './routes/adminFiles';
 import storageRoutes from './routes/storage';
 import dishesRoutes, { adminDishes } from './routes/dishes';
 import storesRoutes, { adminStores } from './routes/stores';
@@ -40,6 +41,7 @@ app.get('/api/health', (c) => c.json({ ok: true }));
 
 app.route('/api/admin', adminRoutes);
 app.route('/api/admin', adminPrizesRoutes);
+app.route('/api/admin', adminFilesRoutes);
 app.route('/api', publicRoutes);
 app.route('/api', usersRoutes);
 app.route('/api', pointsRoutes);

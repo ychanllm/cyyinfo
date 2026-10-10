@@ -1,6 +1,7 @@
 export interface Env {
   DB: D1Database;
   UPLOADS: R2Bucket;
+  FILES: R2Bucket;
   JWT_SECRET: string;
   JWT_EXPIRE_HOURS: string;
   LOGIN_RATE_LIMITER?: RateLimit;

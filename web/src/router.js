@@ -33,6 +33,7 @@ const routes = [
       { path: '', redirect: '/admin/media' },
       { path: 'stats', name: 'admin-stats', component: () => import('./views/admin/StatsView.vue') },
       { path: 'media', name: 'admin-media', component: () => import('./views/admin/MediaView.vue') },
+      { path: 'files', name: 'admin-files', component: () => import('./views/admin/FilesView.vue') },
       { path: 'photos', redirect: '/admin/media?tab=photos' },
       { path: 'diaries', redirect: '/admin/media?tab=diaries' },
       { path: 'diaries/new', name: 'admin-diary-new', component: () => import('./views/admin/DiaryEditView.vue') },

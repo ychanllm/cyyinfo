@@ -22,7 +22,7 @@ export default defineWorkersConfig(async () => {
           singleWorker: true,
           miniflare: {
             d1Databases: ['DB'],
-            r2Buckets: ['UPLOADS'],
+            r2Buckets: ['UPLOADS', 'FILES'],
             bindings: {
               JWT_SECRET: 'test-secret',
               ADMIN_USERNAME: 'admin',
