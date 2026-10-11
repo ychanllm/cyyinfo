@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 
-- `web/` is the Vue 3/Vite frontend: pages in `web/src/views/`, reusable UI in `web/src/components/`, utilities in `web/src/utils/`, and static files in `web/public/`.
+- `web/` is the Vue 3/Vite frontend: pages in `web/src/views/`, reusable UI in `web/src/components/`, utilities in `web/src/utils/`, and static files in `web/public/`. `web/wrangler.toml` is the source of truth for the Pages project's bindings/vars (dashboard edits are disabled); secrets stay dashboard-managed.
 - `worker/` is the Hono-based Cloudflare Worker API: routes in `worker/src/routes/`, shared auth/security code in `worker/src/`, ordered D1 SQL in `worker/migrations/`, and tests in `worker/test/`.
 - `scripts/` contains import helpers; `img/`, `resource/`, and `docs/` hold assets and design notes.
 
